@@ -1083,6 +1083,153 @@ o ISR morreu. Nunca expõe `settings`, e-mail da conta, id interno ou plano.
 
 ---
 
+## Analytics e relatórios (Etapa 16)
+
+Módulo de métricas por restaurante em `/app/analytics` e visão global da
+plataforma em `/admin/analytics`. O passo a passo de dados e permissões está em
+**[docs/AMBIENTES.md](docs/AMBIENTES.md)**; aqui ficam as decisões.
+
+### Pedido não é pagamento
+
+O escopo pede para diferenciar "valor dos pedidos" de "valor efetivamente pago"
+e proíbe marcar pedido como pago sem confirmação real. O produto não tinha
+**nenhum** registro de pagamento até esta etapa — nem tabela, nem coluna — então
+"quanto entrou hoje?" era uma pergunta sem resposta no banco.
+
+A tentação seria `orders.paid boolean` marcado `true` quando o status vira
+`delivered`. Isso mente em três situações reais: cliente que saiu sem pagar,
+conta dividida entre duas pessoas e pagamento em dois métodos. Por isso o
+caminho escolhido foi um livro (`order_payments`): cada linha é um valor que
+entrou, com método, horário e quem lançou. `paid` é **derivado** da soma, nunca
+digitado, e `delivered` continua sendo só o estado da cozinha.
+
+| Conceito | De onde sai | O que responde |
+| --- | --- | --- |
+| `orders_value` | soma de `orders.total`, sem cancelados | "quanto pediram" |
+| `paid_value` | soma de `order_payments` com `status = 'paid'` | "quanto entrou" |
+| `unpaid_value` | `orders_value − pago por pedido` | "quanto há a receber" |
+
+Os dois números divergem de propósito, e em duas dimensões: cancelamento (pedido
+existe, dinheiro não) e tempo (`orders_value` conta por `created_at`,
+`paid_value` por `paid_at` — pedido de março pago em abril aparece em março como
+venda e em abril como caixa).
+
+### O que a tela responde
+
+Faturamento (pedido x recebido x a receber), pedidos, ticket médio, cancelados,
+itens vendidos, vendas e pedidos por dia, horários de pico, produtos e
+categorias mais vendidos, mesas com maior volume, formas de pagamento, chamadas
+de garçom e pedidos de conta, pedidos por status e comparação com o período
+anterior.
+
+Filtros: hoje, ontem, últimos 7, últimos 30, este mês, mês anterior e
+personalizado (até 1 ano).
+
+### Gráficos sem biblioteca
+
+Não havia biblioteca de gráficos instalada, e o escopo diz para usar uma "caso já
+exista". Adicionar Recharts custaria ~100 kB gzip para desenhar quatro séries de
+barras — contra o item 6 do escopo (menos JS). O módulo inteiro são 12 kB sobre
+o bundle compartilhado, em SVG e CSS puro:
+
+| Gráfico | Componente | Por que assim |
+| --- | --- | --- |
+| Vendas por dia | `TrendArea` (linha + área) | tendência se lê em linha |
+| Pedidos por dia | `DailyBars` (barras) | quantidade dia a dia é comparação |
+| Horários de pico | `HoursBars` (24 barras finas) | a forma do dia importa; 24 é o eixo fixo |
+| Produtos/categorias/mesas/métodos | `RankedBars` (barras horizontais) | pizza de 6 fatias não se lê em 320px |
+
+Cada gráfico leva junto uma `<table>` em `sr-only` com os mesmos números: gráfico
+é imagem, e leitor de tela precisa do dado.
+
+### Estados, não gráfico quebrado
+
+| Situação | O que aparece |
+| --- | --- |
+| Carregando | transição do filtro + botão "Atualizar" girando |
+| Sem dados no período | cartão explicando o que falta e dois atalhos (QR Codes, cardápio) |
+| **Dados insuficientes** | o número em lista + aviso de que a evolução começa no 2º dia |
+| Erro | "não foi possível carregar" com botão de atualizar — distinto de "sem venda" |
+
+"Dados insuficientes" é o estado que evita a mentira mais comum de dashboard:
+uma linha com **um ponto** parece dado perdido. A regra é `hasEnoughForTrend`
+(≥ 2 dias com movimento), e vale para período de 30 dias em que a casa vendeu em
+um só.
+
+### Crescimento sem inventar porcentagem
+
+`computeGrowth` trata os casos que enganam:
+
+| Caso | Resultado | Por quê |
+| --- | --- | --- |
+| anterior = 0 | `null` → "sem base" | crescer de 0 para 3 não é "+∞%" nem "+300%" |
+| período anterior sem movimento | `null` → "sem base" | comparar com quando a casa não existia vira conquista falsa |
+| variação < 0,5% | `0%` → "estável" | "0%" com flecha para cima é contraditório |
+| queda total | `−100%` | o divisor é o anterior, que é > 0 |
+
+### Multi-tenant e RBAC
+
+Toda função `restaurant_analytics_*` recebe `p_restaurant_id` e chama
+`is_restaurant_member(p_restaurant_id)` **antes** de devolver qualquer linha. O
+`restaurant_id` vem de `getActiveRestaurant()` (sessão), nunca da URL — e o banco
+confere de novo, então um id forjado devolve vazio, indistinguível de "casa sem
+movimento". As nove funções são `revoke` de `public, anon`; `anon` não lê
+faturamento de ninguém.
+
+Verificado no banco real com `set local role authenticated` +
+`request.jwt.claims`: usuário fora da casa recebe **0 linhas** nas sete RPCs e
+**0 linhas** na tabela `order_payments`. `admin_analytics` com não-admin levanta
+`42501 admin_forbidden`.
+
+### Desempenho
+
+`force-dynamic` é deliberado: o período vem da querystring e o número muda com o
+salão. O custo é uma consulta por abertura, e é por isso que a agregação é função
+de banco indexada — não `select *` trazido para o Node somar. Três índices novos
+(`orders(restaurant_id, created_at)`, `order_items(...)`, `table_requests(...,
+type)`) e o livro de pagamentos com `(restaurant_id, paid_at)`.
+
+As sete RPCs vão em `Promise.all` — uma ida de rede, falha parcial isolada (se o
+ranking de produtos quebrar, o faturamento continua na tela).
+
+### O bug que o primeiro teste pegou
+
+`analytics_period` é `returns table` em plpgsql. Atribuir às colunas de saída
+**não emite linha**: sem `return next`, a função devolve zero registros em
+silêncio, e todas as sete agregações devolvem zero junto. O sintoma não foi erro
+— foi um painel vazio que parecia "casa sem movimento". Está documentado no
+código e coberto pelo harness.
+
+### Verificação
+
+```bash
+node .arena-test/analytics-lib.cjs        # 64 · dinheiro, crescimento, escala, datas
+node .arena-test/analytics-security.cjs   # 95 · guards de tenant, RBAC, grants no SQL
+node .arena-test/analytics-ui.cjs         # 48 · gráficos, estados e pagamento em jsdom
+node .arena-test/nav-fit.cjs              # 13 · a barra de 6 abas cabe em 320px
+```
+
+O `analytics-security` é análise estática da migração: garante que o arquivo no
+repositório mantém `is_restaurant_member`, `revoke ... from public, anon`,
+`is_platform_admin` e o teto de pagamento. Ele **não** substitui o teste contra o
+banco aplicado — os dois rodaram, e é o par que importa.
+
+O `analytics-ui` roda os componentes reais em jsdom e verifica, entre outras
+coisas, que dia sem venda tem barra no piso (não some do eixo), que um único dia
+não desenha linha de tendência, que nenhum elemento sai com `height: NaN%` e que
+o formulário de pagamento abre com **o saldo**, não com o total — que é o erro
+que faria o segundo lançamento de uma conta dividida ser recusado.
+
+O `nav-fit` merece uma nota porque ele existe por causa de um erro de
+estimativa: a 6ª aba foi dimensionada "no olho" (~0.55 em por caractere) e o
+rótulo "Configurações" passava do slot em 320px, criando rolagem horizontal sem
+nenhum erro de runtime. Agora o teste lê as tabelas `cmap`/`hmtx` da fonte e
+soma as larguras de avanço reais — em Noto Sans (fonte de UI real) e em DejaVu
+Sans Bold (12% mais largo, pior caso). Reverter o `min-w-0`/`truncate` derruba
+o teste para 9/13.
+
+---
+
 ## Rotas
 
 | Rota                                  | Descrição                                       |
@@ -1125,6 +1272,8 @@ o ISR morreu. Nunca expõe `settings`, e-mail da conta, id interno ou plano.
 | `/sw.js`                              | **Service worker** — versão carimbada por hash  |
 | `/offline.html`                       | Tela de "sem conexão"                           |
 | `/app/configuracoes/whatsapp`         | **WhatsApp** — número, mensagem e botão (E13)   |
+| `/app/analytics`                      | **Relatórios do restaurante** (Etapa 16)        |
+| `/admin/analytics`                    | **Métricas globais da plataforma** (Etapa 16)   |
 
 Fluxo principal: **cadastro → login automático → criar restaurante → dashboard**.
 O middleware do Supabase renova a sessão e exige login em `/app`,
@@ -1150,7 +1299,8 @@ src/
 │   ├── table-requests.ts fila de solicitações da mesa (Etapa 8)
 │   ├── theme.ts        tema do cardápio: salvar, resetar, upload (Etapa 9)
 │   ├── admin.ts        painel master: status, cadastro, papéis (Etapa 10)
-│   └── billing.ts      planos, trial, troca de plano e assinatura (Etapa 11)
+│   ├── billing.ts      planos, trial, troca de plano e assinatura (Etapa 11)
+│   └── payments.ts     livro de pagamentos: lançar, estornar, ler (E16)
 ├── app/
 │   ├── layout.tsx      metadata, viewport, manifest
 │   ├── page.tsx        landing
@@ -1169,9 +1319,11 @@ src/
 │   │                   TableActionsBar (Garçom/Carrinho/Conta),
 │   │                   TableRequestSheet (confirmação)
 │   ├── orders/         Painel da equipe: OrdersPanel, OrderCard,
-│   │                   OrderDetailSheet, OrderBoardCards,
+│   │                   OrderDetailSheet, OrderBoardCards, PaymentSection,
 │   │                   TableRequestsSection, hooks de tempo real
 │   │                   e de paginação
+│   ├── analytics/      Relatórios: charts (SVG/CSS puro), MetricCard,
+│   │                   PeriodFilter (Etapa 16)
 │   ├── tables/         Painel de mesas: TablesManager, TableCard,
 │   │                   TableSheet, QrSheet, QrPrintCard,
 │   │                   NfcPanel, NfcSheet, NfcTagSheet, NfcStatusBadge
@@ -1328,6 +1480,7 @@ scripts/                auditoria de layout + teste de RLS
 | ~~12~~ | ~~PWA instalável e mobile first~~ | ~~manifest, service worker, ícones, offline — **concluída**~~ |
 | ~~13~~ | ~~WhatsApp: configuração e botão~~ | ~~`whatsapp_settings` + `wa.me` no cardápio — **concluída**~~ |
 | ~~14~~ | ~~Preparação para produção~~     | ~~ambientes, domínio, CSP, rate limit, erros, health — **concluída**~~ |
+| ~~16~~ | ~~Analytics e relatórios~~      | ~~`/app/analytics` + `/admin/analytics`, RPCs de agregação — **concluída**~~ |
 | 15    | Cobrança real (gateway)         | `lib/billing` — Stripe/Mercado Pago/Asaas via `PAYMENT_PROVIDER` |
 | —     | Observabilidade                 | Sentry/Datadog nos dois pontos de `console.error` já marcados |
 | —     | WhatsApp Business API           | `lib/whatsapp/provider.ts` + `whatsapp_messages` (estrutura pronta) |

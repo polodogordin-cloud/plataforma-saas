@@ -98,6 +98,49 @@ pior que devolver nada: QR Code errado só se descobre impresso.
   fronteira que ignora RLS, e todas chamam `is_platform_admin()`,
   `is_restaurant_admin()` ou validam um token antes de fazer qualquer coisa.
 
+### Pagamentos e analytics (Etapa 16)
+
+Duas coisas mudaram no banco nesta etapa e ambas precisam existir no ambiente
+antes de a tela abrir:
+
+1. **`order_payments`** — o livro de dinheiro recebido. Antes dele o banco não
+   registrava pagamento nenhum, então "valor efetivamente pago" não era uma
+   consulta: era um palpite. Escrita só por RPC (`record_order_payment`,
+   `refund_order_payment`); a tabela tem `select` para membros da casa e nada
+   mais. Um pedido pago **é derivado** da soma dos lançamentos, nunca de uma
+   coluna `paid` digitada à mão.
+2. **As dez funções de agregação** — `analytics_period` /
+   `analytics_previous_period` (resolvedores de janela), sete
+   `restaurant_analytics_*` (uma por bloco da tela), `admin_analytics` e
+   `admin_analytics_daily`.
+
+Aplicar `0016_analytics.sql` inteiro. Ele é idempotente (`create table if not
+exists`, `create or replace function`, `create index if not exists`), então
+reaplicar num banco já migrado não quebra nada nem duplica dados.
+
+```sql
+-- conferir que a etapa 16 está aplicada
+select count(*) as funcoes
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and (p.proname like 'restaurant_analytics%'
+       or p.proname in ('admin_analytics','admin_analytics_daily',
+                        'analytics_period','analytics_previous_period',
+                        'record_order_payment','refund_order_payment',
+                        'list_order_payments'));
+-- esperado: 15
+```
+
+**Staging compartilha o banco de produção** (ver §1). Como a `0016` só cria
+objetos novos e não toca em dado existente, aplicá-la em staging já migra
+produção junto — não há uma segunda janela de migration depois.
+
+**Nenhuma variável de ambiente nova.** A tela usa o mesmo cliente Supabase do
+resto do app; sem `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+o erro aparece na abertura de `/app/analytics` como
+`Your project's URL and Key are required to create a Supabase client`. Se essa
+frase aparecer num 500, é env faltando no ambiente, não a migration.
+
 ### Ao criar migration nova
 
 1. arquivo `NNNN_nome.sql` em `supabase/migrations/`;

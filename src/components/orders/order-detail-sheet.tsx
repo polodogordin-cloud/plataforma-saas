@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CalendarClock, ChefHat, Loader2, MessageSquareText, UtensilsCrossed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
+import { PaymentSection } from "@/components/orders/payment-section";
 import { formatPrice } from "@/lib/validation";
 import { STATUS_TONE } from "@/lib/order-status";
 import { orderAgeLabel, orderClock, orderDate } from "@/lib/order-time";
@@ -11,6 +12,8 @@ import {
   ORDER_CANCELLABLE,
   ORDER_NEXT_ACTION,
   type OrderStatusEvent,
+  type OrderPayment,
+  type PaymentMethod,
   type PanelOrder,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -29,6 +32,9 @@ export function OrderDetailSheet({
   onAdvance,
   onCancel,
   fetchHistory,
+  fetchPayments,
+  onRecordPayment,
+  onRefundPayment,
   timeZone,
 }: {
   order: PanelOrder | null;
@@ -36,9 +42,22 @@ export function OrderDetailSheet({
   onAdvance: () => void;
   onCancel: () => void;
   fetchHistory: (orderId: string) => Promise<OrderStatusEvent[]>;
+  /**
+   * Etapa 16: pagamentos. Opcionais para o detalhe continuar funcionando em
+   * qualquer tela que só queira mostrar o pedido (o tipo não muda de
+   * significado, e sem as props a seção simplesmente não aparece).
+   */
+  fetchPayments?: (orderId: string) => Promise<OrderPayment[]>;
+  onRecordPayment?: (input: {
+    amount: string;
+    method: PaymentMethod;
+    note?: string;
+  }) => Promise<string | null>;
+  onRefundPayment?: (paymentId: string) => Promise<string | null>;
   timeZone: string;
 }) {
   const [history, setHistory] = useState<OrderStatusEvent[] | null>(null);
+  const [payments, setPayments] = useState<OrderPayment[] | null>(null);
 
   useEffect(() => {
     if (!order) {
@@ -48,15 +67,27 @@ export function OrderDetailSheet({
 
     let cancelled = false;
     setHistory(null);
+    setPayments(fetchPayments ? null : []);
 
     fetchHistory(order.id).then((rows) => {
       if (!cancelled) setHistory(rows);
     });
 
+    /*
+     * Pagamentos em paralelo com o histórico: são duas consultas independentes
+     * e o sheet abre mais rápido do que em série. `fetchPayments` é opcional —
+     * quando não vem, a lista fica vazia e a seção não renderiza.
+     */
+    if (fetchPayments) {
+      fetchPayments(order.id).then((rows) => {
+        if (!cancelled) setPayments(rows);
+      });
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [order, fetchHistory]);
+  }, [order, fetchHistory, fetchPayments]);
 
   if (!order) return null;
 
@@ -214,6 +245,36 @@ export function OrderDetailSheet({
             </div>
           </dl>
         </section>
+
+        {/*
+         * Pagamentos (etapa 16): só quando a tela passou as props. Fica antes
+         * do histórico porque é a pergunta operacional do fim da conta ("já
+         * pagou?"), enquanto o histórico é auditoria.
+         */}
+        {fetchPayments && onRecordPayment && onRefundPayment && payments !== null && (
+          <PaymentSection
+            order={order}
+            payments={payments}
+            onRecord={async (input) => {
+              const problem = await onRecordPayment(input);
+              if (!problem) {
+                // Relê do banco: o saldo só é verdade depois de o banco
+                // aceitar. Ajustar no cliente daria número bonito e errado.
+                const rows = await fetchPayments(order.id);
+                setPayments(rows);
+              }
+              return problem;
+            }}
+            onRefund={async (paymentId) => {
+              const problem = await onRefundPayment(paymentId);
+              if (!problem) {
+                const rows = await fetchPayments(order.id);
+                setPayments(rows);
+              }
+              return problem;
+            }}
+          />
+        )}
 
         {/* Histórico */}
         <section aria-labelledby="detail-history">

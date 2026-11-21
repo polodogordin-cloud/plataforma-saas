@@ -12,6 +12,8 @@ import {
   Users,
   CreditCard,
   Receipt,
+  ChartNoAxesColumn,
+  ChevronRight,
 } from "lucide-react";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { MetricCard } from "@/components/admin/metric-card";
@@ -243,6 +245,37 @@ export default async function AdminDashboardPage() {
             </ul>
           </section>
         )}
+
+        {/*
+         * Etapa 16: relatórios da plataforma.
+         *
+         * Entra como cartão no dashboard, e não como sexta aba da navegação
+         * inferior — mesmo critério já usado para Planos/Assinaturas (etapa 11):
+         * seis alvos de 56px numa tela de 320px deixam cada aba com ~48px e o
+         * rótulo quebra. Quem procura relatório começa pelo dashboard.
+         */}
+        <section aria-labelledby="relatorios-atalho">
+          <h2 id="relatorios-atalho" className="mb-2.5 text-sm font-semibold text-ink-700">
+            Relatórios
+          </h2>
+          <Link
+            href="/admin/analytics"
+            className="card flex items-center gap-3.5 p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] active:scale-[0.99]"
+          >
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
+              <ChartNoAxesColumn className="size-5" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[0.95rem] font-semibold text-ink-900">
+                Analytics da plataforma
+              </span>
+              <span className="block truncate text-xs text-ink-500">
+                Crescimento, pedidos e receita de todas as casas
+              </span>
+            </span>
+            <ChevronRight className="size-4 shrink-0 text-ink-300" aria-hidden="true" />
+          </Link>
+        </section>
 
         {/* Auditoria */}
         <section aria-labelledby="atividade">

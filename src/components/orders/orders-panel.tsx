@@ -21,6 +21,7 @@ import { useOrdersRealtime } from "@/components/orders/use-orders-realtime";
 import { usePanelOrders } from "@/components/orders/use-panel-orders";
 import { RequestsPanelHost } from "@/components/orders/requests-panel-host";
 import { setOrderStatus } from "@/actions/orders-panel";
+import { fetchOrderPayments, recordPayment, refundPayment } from "@/actions/payments";
 import {
   primeAudio,
   playNewOrderSound,
@@ -521,6 +522,16 @@ export function OrdersPanel({
         order={detail}
         timeZone={timeZone}
         fetchHistory={historyFor}
+        fetchPayments={fetchOrderPayments}
+        onRecordPayment={async (input) => {
+          if (!detail) return "Pedido não encontrado.";
+          const result = await recordPayment({ orderId: detail.id, ...input });
+          return result.ok ? null : result.error;
+        }}
+        onRefundPayment={async (paymentId) => {
+          const result = await refundPayment(paymentId);
+          return result.ok ? null : result.error;
+        }}
         onClose={() => setDetail(null)}
         onAdvance={() => {
           if (!detail) return;

@@ -1132,3 +1132,180 @@ export type PublicPlansPayload = {
   trial_days: number;
   plans: PlanCatalogEntry[];
 };
+
+/* -------------------------------------------------------------------------- */
+/* Analytics — Etapa 16                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Preset de período.
+ *
+ * A lista é fechada de propósito: o valor vai para `analytics_period`, que
+ * levanta `unknown_preset` em qualquer coisa fora dela. Um `?periodo=` na URL
+ * não vira SQL — vira uma `case` no banco.
+ */
+export type AnalyticsPeriod =
+  | "today"
+  | "yesterday"
+  | "last7"
+  | "last30"
+  | "this_month"
+  | "last_month"
+  | "custom";
+
+/** Rótulo do filtro rápido. Ordem = ordem dos chips na tela. */
+export const ANALYTICS_PERIODS: Array<{ id: AnalyticsPeriod; label: string; short: string }> = [
+  { id: "today", label: "Hoje", short: "Hoje" },
+  { id: "yesterday", label: "Ontem", short: "Ontem" },
+  { id: "last7", label: "Últimos 7 dias", short: "7 dias" },
+  { id: "last30", label: "Últimos 30 dias", short: "30 dias" },
+  { id: "this_month", label: "Este mês", short: "Este mês" },
+  { id: "last_month", label: "Mês anterior", short: "Mês passado" },
+  { id: "custom", label: "Personalizado", short: "Escolher" },
+];
+
+/** `true` quando o preset exige `from`/`to` na querystring. */
+export const ANALYTICS_NEEDS_DATES = (period: AnalyticsPeriod): boolean => period === "custom";
+
+/** Métodos de pagamento como o salão fala. */
+export type PaymentMethod = "cash" | "pix" | "card" | "other";
+
+export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
+  cash: "Dinheiro",
+  pix: "Pix",
+  card: "Cartão",
+  other: "Outro",
+};
+
+export type PaymentStatus = "paid" | "refunded";
+
+/** Um lançamento no livro de pagamentos. */
+export type OrderPayment = {
+  payment_id: string;
+  amount: number;
+  method: PaymentMethod;
+  status: PaymentStatus;
+  paid_at: string;
+  note: string | null;
+};
+
+/**
+ * Resumo do período.
+ *
+ * `orders_value` é o que foi **pedido**; `paid_value` é o que **entrou**.
+ * Os dois convivem de propósito e não devem ser somados nem trocados: um
+ * pedido entregue e ainda não pago aparece em `orders_value` e em
+ * `unpaid_value`, e em `paid_value` somente quando alguém registrar o
+ * recebimento.
+ */
+export type AnalyticsSummary = {
+  preset: AnalyticsPeriod;
+  from_date: string;
+  to_date: string;
+  orders_count: number;
+  orders_value: number;
+  paid_value: number;
+  unpaid_value: number;
+  orders_cancelled: number;
+  cancelled_value: number;
+  ticket_average: number;
+  waiter_calls: number;
+  bill_requests: number;
+  items_sold: number;
+  orders_by_status: Partial<Record<OrderStatus, number>>;
+};
+
+/** Um ponto do gráfico de vendas/pedidos por dia. */
+export type AnalyticsDay = {
+  day: string;
+  orders_count: number;
+  orders_value: number;
+  paid_value: number;
+  cancelled_count: number;
+};
+
+/** Hora do dia (0–23) sempre presente, mesmo com zero pedidos. */
+export type AnalyticsHour = { hour: number; orders_count: number; orders_value: number };
+
+export type AnalyticsProduct = { product_name: string; quantity: number; revenue: number };
+
+export type AnalyticsCategory = {
+  category_id: string | null;
+  category_name: string;
+  quantity: number;
+  revenue: number;
+};
+
+export type AnalyticsTable = {
+  table_id: string;
+  table_name: string;
+  orders_count: number;
+  orders_value: number;
+};
+
+export type AnalyticsPaymentMethod = {
+  method: PaymentMethod;
+  payments_count: number;
+  amount: number;
+};
+
+/** Mesmo tamanho do período atual, imediatamente antes dele. */
+export type AnalyticsPrevious = {
+  from_date: string;
+  to_date: string;
+  orders_count: number;
+  orders_value: number;
+  paid_value: number;
+  ticket_average: number;
+  /** `false` quando não houve pedido: crescer a partir de zero não tem %. */
+  has_data: boolean;
+};
+
+/** Tudo o que a tela de analytics consome, numa chamada. */
+export type AnalyticsPayload = {
+  summary: AnalyticsSummary;
+  previous: AnalyticsPrevious;
+  daily: AnalyticsDay[];
+  hours: AnalyticsHour[];
+  products: AnalyticsProduct[];
+  categories: AnalyticsCategory[];
+  tables: AnalyticsTable[];
+  methods: AnalyticsPaymentMethod[];
+  timeZone: string;
+};
+
+/** Métricas globais da plataforma (`/admin/analytics`). */
+export type AdminAnalytics = {
+  days: number;
+  restaurants_total: number;
+  restaurants_active: number;
+  restaurants_suspended: number;
+  restaurants_new: number;
+  restaurants_previous: number;
+  orders_total: number;
+  orders_value: number;
+  paid_value: number;
+  orders_cancelled: number;
+  orders_new: number;
+  orders_previous: number;
+  active_subscriptions: number;
+  trials_now: number;
+  mrr: number;
+};
+
+export type AdminAnalyticsDay = {
+  day: string;
+  restaurants_new: number;
+  orders_count: number;
+  orders_value: number;
+};
+
+/**
+ * Resultado de registrar/estornar pagamento.
+ *
+ * Mesmo formato das outras actions de pedido (`{ok:true}` / `{ok:false,error}`),
+ * para o componente tratar erro do banco sem inventar caminho novo.
+ */
+export type PaymentActionResult =
+  | { ok: true; payment: OrderPayment }
+  | { ok: false; error: string };
