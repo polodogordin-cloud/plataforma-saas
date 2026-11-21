@@ -570,3 +570,67 @@ export type CreatedTableRequest = {
   status: TableRequestStatus;
   created_at: string;
 };
+
+/* ==========================================================================
+   Etapa 9 · Personalização visual do cardápio
+   ========================================================================== */
+
+export type CardStyle = "rounded" | "soft" | "flat";
+export type ButtonStyle = "solid" | "outline" | "pill";
+
+export type ThemePresetId =
+  | "moderno"
+  | "elegante"
+  | "dark"
+  | "minimalista"
+  | "restaurante"
+  | "fastfood";
+
+/**
+ * Tema do cardápio de um restaurante.
+ *
+ * Uma linha por restaurante (PK = restaurant_id), então é impossível existir
+ * "tema de duas casas" ou tema órfão. Todos os campos de cor são hex `#rrggbb`
+ * já normalizados — o banco tem `check` para isso.
+ */
+export type RestaurantTheme = {
+  /** Último preset aplicado; `null` quando o dono nunca escolheu um. */
+  preset: ThemePresetId | null;
+  primary_color: string;
+  secondary_color: string;
+  background_color: string;
+  text_color: string;
+  button_color: string;
+  card_style: CardStyle;
+  button_style: ButtonStyle;
+  logo_url: string | null;
+  cover_url: string | null;
+};
+
+/** Tokens resolvidos (contraste já corrigido) usados para pintar a tela. */
+export type ThemeTokens = {
+  primary: string;
+  secondary: string;
+  background: string;
+  surface: string;
+  surfaceMuted: string;
+  text: string;
+  textMuted: string;
+  border: string;
+  button: string;
+  buttonText: string;
+  buttonTextMuted: string;
+  onPrimary: string;
+  primarySoft: string;
+  isDark: boolean;
+  cardStyle: CardStyle;
+  buttonStyle: ButtonStyle;
+};
+
+/** Imagem enviada pelo painel (logo ou capa). */
+export type ThemeImageKind = "logo" | "cover";
+
+export const THEME_IMAGE_LABEL: Record<ThemeImageKind, string> = {
+  logo: "Logo",
+  cover: "Capa",
+};

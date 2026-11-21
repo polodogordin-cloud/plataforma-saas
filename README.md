@@ -20,7 +20,12 @@ detalhe do produto em tela cheia com quantidade. Nada de tela administrativa.
 Code e TAG NFC; o cliente monta o carrinho e pede; a equipe acompanha tudo em
 `/app/pedidos` sem recarregar.
 
-**Etapa 8 — chamar garçom e pedir a conta (atual).** Barra fixa no cardápio da
+**Etapa 9 — personalização visual (atual).** Cada restaurante define logo, capa,
+cinco cores, estilo de card e de botão, com seis temas prontos e preview de
+celular ao vivo. O cardápio público aplica o tema automaticamente — e cai num
+tema padrão profissional quando não há personalização.
+
+**Etapa 8 — chamar garçom e pedir a conta.** Barra fixa no cardápio da
 mesa com **🛎 Garçom · 🛒 Carrinho · 💳 Conta**, confirmação antes do envio,
 anti-duplicata e cooldown no banco, e seção SOLICITAÇÕES no painel com contador
 vermelho, "Há 1 minuto" e ATENDER → MARCAR COMO RESOLVIDO, em tempo real.
@@ -447,6 +452,67 @@ entre duas casas, publicação de tempo real) e **64 checagens de UI** em jsdom
 
 ---
 
+### Personalização visual do cardápio (Etapa 9)
+
+Cada restaurante escolhe a própria cara — logo, capa, cinco cores, estilo de
+card e de botão — na tela **Personalizar cardápio** (`/app/configuracoes/personalizacao`),
+com preview de celular atualizando ao vivo.
+
+| Objeto | Papel |
+| --- | --- |
+| `public.restaurant_themes` | uma linha por restaurante (PK = `restaurant_id`) |
+| `public.public_restaurant_themes` | view do cardápio público, só com as colunas do tema |
+| `public.save_restaurant_theme(...)` | upsert validado (hex, estilos, URL do próprio tenant) |
+| `public.reset_restaurant_theme(uuid)` | apaga a personalização e volta ao padrão |
+| `src/lib/theme.ts` | presets, contraste, tokens e CSS vars (módulo neutro) |
+
+- **O tema não é `settings`.** Jsonb livre não valida cor: aqui as cinco cores
+  são colunas com `check` de `#rrggbb`, `card_style`/`button_style` têm lista
+  fechada e `PK = restaurant_id` impede tema duplicado ou órfão. Valor inválido
+  é recusado pelo banco, não "tratado" na tela.
+- **Uma fonte de verdade para a aparência: variáveis CSS.** O cardápio público
+  não usa `bg-brand-600`; usa `--mv-primary`, `--mv-bg`, `--mv-button`… O
+  `ThemeScope` no topo da página define as 17 variáveis, e o mesmo
+  `themeTokens()` alimenta o preview do painel. Preview e produção não podem
+  divergir porque são o mesmo cálculo.
+- **Contraste é regra, não sugestão.** Texto sobre o fundo e texto do botão são
+  **derivados** por contraste (WCAG 4.5:1): se o dono escolher cinza-claro sobre
+  branco, o cardápio continua legível. A tela de cores mostra a razão medida.
+- **Seis temas prontos.** Moderno, Elegante, Dark, Minimalista, Restaurante e
+  Fast food — cada um preenche tudo (nada de tema "meio configurado") e serve
+  como ponto de partida para ajuste fino.
+- **Estilos de card e de botão.** `rounded | soft | flat` mudam raio e sombra
+  dos cards; `solid | outline | pill` mudam o preenchimento e o raio dos
+  botões. Botão "outline" é fundo da superfície + borda na cor do botão.
+- **Upload otimizado no navegador.** PNG/JPG/WEBP, até 8 MB no original: a
+  imagem é validada por **assinatura de arquivo** (renomear `.exe` para `.png`
+  não passa), redimensionada com `canvas` para 320×320 (logo) ou 1600×900
+  (capa) e só então enviada em WebP. O arquivo não passa por Server Action.
+- **Segurança em três camadas.** O caminho é sempre
+  `{restaurant_id}/theme/...`; a policy do Storage exige `is_restaurant_admin`
+  naquele primeiro segmento; e a RPC recusa URL que não aponte para a pasta do
+  próprio restaurante. `anon` não lê a tabela — só a view pública.
+- **Fallback é leitura, não escrita.** Quem nunca personalizou não ganha linha:
+  `normalizeTheme(null)` devolve o tema padrão (Moderno) e o cardápio abre
+  igual. "Nunca personalizou" continua distinguível de "personalizou igual ao
+  padrão", e o botão *Restaurar tema padrão* só apaga a linha.
+- **Mobile primeiro.** Preview fixo no topo no formato de um celular
+  (320×620), três abas (Temas · Cores · Estilo), accordions para o que é
+  secundário, inputs de 48 px e a barra de **Salvar** fixa no rodapé. Nada é
+  gravado até salvar — dá para testar dez paletas e desistir.
+- **Sem quebra de performance.** O tema é um `style` inline (nenhum CSS novo por
+  restaurante, nenhum rebuild), as imagens já saem no tamanho usado e a página
+  pública continua com `revalidate = 60` — as ações chamam `revalidatePath` para
+  o tema novo aparecer na hora.
+
+Verificação da etapa: **25 checagens SQL** no banco vivo (upsert, view pública,
+isolamento entre duas casas, staff sem escrita, hex/estilo/preset inválidos, URL
+externa e de outro tenant recusadas, bucket sem SVG, realtime) e **135
+checagens automatizadas** — 59 de lógica/segurança do tema, 15 de upload, 51 de
+UI em jsdom e 18 de renderização SSR do cardápio.
+
+---
+
 ## Rotas
 
 | Rota                                  | Descrição                                       |
@@ -471,6 +537,7 @@ entre duas casas, publicação de tempo real) e **64 checagens de UI** em jsdom
 | `/app/configuracoes`                  | Hub de configurações                            |
 | `/app/configuracoes/conta`            | Conta do usuário                                |
 | `/app/configuracoes/restaurante`      | Dados do restaurante                            |
+| `/app/configuracoes/personalizacao`   | **Personalizar cardápio** — cores e imagens (E9) |
 
 Fluxo principal: **cadastro → login automático → criar restaurante → dashboard**.
 O middleware do Supabase renova a sessão e protege `/app`, `/onboarding` e
@@ -491,7 +558,8 @@ src/
 │   ├── nfc.ts          TAGs NFC das mesas
 │   ├── orders.ts       criação e releitura de pedidos (Etapa 6)
 │   ├── orders-panel.ts status, anotações e histórico (Etapa 7)
-│   └── table-requests.ts fila de solicitações da mesa (Etapa 8)
+│   ├── table-requests.ts fila de solicitações da mesa (Etapa 8)
+│   └── theme.ts        tema do cardápio: salvar, resetar, upload (Etapa 9)
 ├── app/
 │   ├── layout.tsx      metadata, viewport, manifest
 │   ├── page.tsx        landing
@@ -516,6 +584,8 @@ src/
 │   ├── tables/         Painel de mesas: TablesManager, TableCard,
 │   │                   TableSheet, QrSheet, QrPrintCard,
 │   │                   NfcPanel, NfcSheet, NfcTagSheet, NfcStatusBadge
+│   ├── theme/          Editor de personalização: ThemeEditor, MenuPreview,
+│   │                   ColorField, ImagePicker
 │   └── ui/             Button, Field, Card, Badge, Sheet, Switch,
 │                       ConfirmSheet, ComingSoon…
 ├── lib/
@@ -530,6 +600,8 @@ src/
 │   ├── cart.ts         regras do carrinho (módulo neutro, testável)
 │   ├── order-status.ts ícone, rótulo e cor de cada status
 │   ├── order-time.ts   tempo de espera e alerta de atraso
+│   ├── theme.ts        presets, contraste e CSS vars do cardápio (neutro)
+│   ├── theme-upload.ts validação e otimização de imagem (neutro)
 │   ├── table-request.ts disponibilidade/cooldown das solicitações (neutro)
 │   ├── notify.ts       som (WebAudio), vibração e preferência
 │   ├── realtime.ts     nomes dos canais de tempo real
@@ -545,6 +617,7 @@ supabase/migrations/    schema aplicado via Supabase
                         0007_orders.sql (Etapa 6)
                         0008_order_panel.sql (Etapa 7)
                         0009_table_requests.sql (Etapa 8)
+                        0010_restaurant_theme.sql (Etapa 9)
 scripts/                auditoria de layout + teste de RLS
 ```
 
@@ -567,6 +640,11 @@ scripts/                auditoria de layout + teste de RLS
   valor. A mesa vem do token (nunca do corpo da requisição), a duplicata é
   barrada por índice único parcial e o cooldown vive no banco — a tela só
   reflete a decisão do servidor.
+- **Aparência é dado do restaurante, não código.** O cardápio lê variáveis
+  `--mv-*` definidas por um `style` no topo da página; nenhum CSS é gerado por
+  restaurante e nenhum rebuild acontece ao trocar de tema. O mesmo módulo que
+  calcula os tokens pinta o preview do editor — o que se vê ali é o que o
+  cliente vê, com contraste corrigido no caminho.
 - **Tempo real sem polling.** O painel não consulta em intervalo: assina o
   canal, e o evento só dispara uma releitura. Menos requisição, menos bateria no
   celular do salão e a lista certa no instante em que o pedido chega.
@@ -599,12 +677,13 @@ scripts/                auditoria de layout + teste de RLS
 | ~~6~~ | ~~Carrinho e pedidos~~          | ~~`orders`, `order_items`, `create_order` — **concluída**~~ |
 | ~~7~~ | ~~Painel de pedidos~~           | ~~`/app/pedidos` + tempo real — **concluída**~~     |
 | ~~8~~ | ~~Chamar garçom / pedir a conta~~ | ~~`table_requests` + barra do cardápio — **concluída**~~ |
-| 9     | Personalização do cardápio      | `restaurants.settings` (jsonb) + upload de logo     |
+| ~~9~~ | ~~Personalização do cardápio~~  | ~~`restaurant_themes` + `/app/configuracoes/personalizacao` — **concluída**~~ |
 | 10    | Planos e assinaturas            | `plans`, `subscriptions`; gate por `restaurant_id`   |
 | 11    | Publicação e produção           | domínios, observabilidade, cache                    |
 
-Pontos já preparados: o bucket de storage existe, `settings` é jsonb livre para a
-personalização, o status do restaurante já é modelado (`draft → published`), e a
+Pontos já preparados: o bucket de storage existe, o tema já é uma tabela por
+tenant (as próximas etapas podem acrescentar tipografia e layout sem tocar no
+que existe), o status do restaurante já é modelado (`draft → published`), e a
 função `has_restaurant_role` aceita o array de papéis permitidos — ou seja, novos
 níveis de acesso não exigem reescrever policies.
 

@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { Minus, Plus, Star, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { primaryButtonBase, primaryButtonStyle } from "@/components/public/themed";
+import { DEFAULT_THEME } from "@/lib/theme";
 import { formatPrice } from "@/lib/validation";
-import type { PublicProduct } from "@/lib/types";
+import type { PublicProduct, RestaurantTheme } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,12 +26,15 @@ export function ProductDetail({
   open,
   onClose,
   onAdd,
+  theme = DEFAULT_THEME,
 }: {
   product: PublicProduct | null;
   open: boolean;
   onClose: () => void;
   /** Adiciona ao carrinho. Sem este callback o botão só confirma visualmente. */
   onAdd?: (product: PublicProduct, quantity: number) => void;
+  /** Tema do cardápio — o detalhe é uma tela cheia, então segue as cores. */
+  theme?: RestaurantTheme;
 }) {
   const [mounted, setMounted] = useState(false);
   const [quantity, setQuantity] = useState(1);
@@ -111,7 +115,7 @@ export function ProductDetail({
         onKeyDown={trapFocus}
         style={{ transform: dragY ? `translateY(${dragY}px)` : undefined }}
         className={cn(
-          "relative flex max-h-[94dvh] w-full flex-col overflow-hidden bg-white shadow-2xl outline-none sm:max-w-md sm:rounded-3xl",
+          "relative flex max-h-[94dvh] w-full flex-col overflow-hidden bg-[var(--mv-surface)] text-[var(--mv-text)] shadow-2xl outline-none sm:max-w-md sm:rounded-3xl",
           "animate-pop-in rounded-t-[1.75rem]",
           dragY === 0 && "transition-transform duration-200 sm:transition-none",
         )}
@@ -150,7 +154,7 @@ export function ProductDetail({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {/* Imagem grande */}
-          <div className="relative aspect-[4/3] w-full bg-ink-100">
+          <div className="relative aspect-[4/3] w-full bg-[var(--mv-surface-muted)]">
             {product.image_url ? (
               <Image
                 src={product.image_url}
@@ -161,8 +165,8 @@ export function ProductDetail({
                 className="object-cover"
               />
             ) : (
-              <div className="grid size-full place-items-center bg-gradient-to-br from-brand-50 to-ink-100">
-                <span className="text-5xl font-semibold text-brand-200" aria-hidden="true">
+              <div className="grid size-full place-items-center bg-[var(--mv-primary-soft)]">
+                <span className="text-5xl font-semibold text-[var(--mv-primary)] opacity-30" aria-hidden="true">
                   {product.name.slice(0, 1).toUpperCase()}
                 </span>
               </div>
@@ -173,23 +177,25 @@ export function ProductDetail({
             <div className="flex items-start gap-2">
               <h2
                 id="product-detail-title"
-                className="min-w-0 flex-1 text-xl font-semibold leading-tight text-ink-900 text-balance"
+                className="min-w-0 flex-1 text-xl font-semibold leading-tight text-[var(--mv-text)] text-balance"
               >
                 {product.name}
               </h2>
               {product.is_featured && (
                 <Star
-                  className="mt-1 size-4 shrink-0 fill-accent-500 text-accent-500"
+                  className="mt-1 size-4 shrink-0 fill-[var(--mv-secondary)] text-[var(--mv-secondary)]"
                   aria-label="Destaque da casa"
                 />
               )}
             </div>
 
             {product.description && (
-              <p className="mt-2 text-sm leading-relaxed text-ink-600">{product.description}</p>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--mv-text-muted)]">
+                {product.description}
+              </p>
             )}
 
-            <p className="mt-3 text-lg font-semibold tabular-nums text-brand-700">
+            <p className="mt-3 text-lg font-semibold tabular-nums text-[var(--mv-primary)]">
               {formatPrice(product.price)}
             </p>
 
@@ -201,20 +207,20 @@ export function ProductDetail({
             <div id="product-detail-options" data-slot="product-options" className="mt-4" />
 
             {/* Quantidade */}
-            <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-ink-200 bg-ink-50/60 p-2 pl-4">
-              <span className="text-sm font-semibold text-ink-800">Quantidade</span>
+            <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-[var(--mv-border)] bg-[var(--mv-surface-muted)] p-2 pl-4">
+              <span className="text-sm font-semibold text-[var(--mv-text)]">Quantidade</span>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setQuantity((value) => Math.max(1, value - 1))}
                   disabled={quantity <= 1}
                   aria-label="Diminuir quantidade"
-                  className="grid size-11 place-items-center rounded-xl bg-white text-ink-700 shadow-sm transition disabled:opacity-40 active:scale-95"
+                  className="grid size-11 place-items-center rounded-xl bg-[var(--mv-surface)] text-[var(--mv-text)] shadow-sm transition disabled:opacity-40 active:scale-95"
                 >
                   <Minus className="size-4.5" aria-hidden="true" strokeWidth={2.5} />
                 </button>
                 <span
-                  className="w-9 text-center text-base font-semibold tabular-nums text-ink-900"
+                  className="w-9 text-center text-base font-semibold tabular-nums text-[var(--mv-text)]"
                   aria-live="polite"
                   aria-label={`Quantidade: ${quantity}`}
                 >
@@ -224,7 +230,7 @@ export function ProductDetail({
                   type="button"
                   onClick={() => setQuantity((value) => Math.min(99, value + 1))}
                   aria-label="Aumentar quantidade"
-                  className="grid size-11 place-items-center rounded-xl bg-white text-ink-700 shadow-sm transition active:scale-95"
+                  className="grid size-11 place-items-center rounded-xl bg-[var(--mv-surface)] text-[var(--mv-text)] shadow-sm transition active:scale-95"
                 >
                   <Plus className="size-4.5" aria-hidden="true" strokeWidth={2.5} />
                 </button>
@@ -247,12 +253,11 @@ export function ProductDetail({
 
         {/* Rodapé fixo */}
         <footer
-          className="shrink-0 border-t border-ink-100 bg-white px-4 pt-3"
+          className="shrink-0 border-t border-[var(--mv-border)] bg-[var(--mv-surface)] px-4 pt-3"
           style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.75rem)" }}
         >
-          <Button
-            size="lg"
-            block
+          <button
+            type="button"
             onClick={() => {
               // Sem mesa (link sem QR/NFC) o cardápio continua navegável, mas
               // não há para onde enviar: avisamos em vez de fingir um carrinho.
@@ -262,11 +267,12 @@ export function ProductDetail({
               }
               onAdd(product, quantity);
             }}
-            className="justify-between px-5"
+            className={cn(primaryButtonBase, "w-full min-h-[3.25rem] justify-between px-5 text-base")}
+            style={primaryButtonStyle(theme)}
           >
             <span>Adicionar ao pedido</span>
             <span className="tabular-nums">{formatPrice(total)}</span>
-          </Button>
+          </button>
         </footer>
       </div>
     </div>,

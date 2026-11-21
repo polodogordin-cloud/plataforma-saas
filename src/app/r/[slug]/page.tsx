@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { PublicHeader } from "@/components/public/public-header";
 import { PublicMenuView } from "@/components/public/public-menu";
-import { getPublicMenu, getPublicRestaurant, normalizeSlug } from "@/lib/data/public-menu";
+import { ThemeScope } from "@/components/public/themed";
+import { getPublicMenu, getPublicRestaurant } from "@/lib/data/public-menu";
+import { getPublicRestaurantTheme } from "@/lib/data/theme";
 import { describeWeek, readOpeningHours } from "@/lib/opening-hours";
 import { getRestaurantTimezone } from "@/lib/data/timezone";
 
@@ -61,16 +63,19 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
 
   if (!restaurant) notFound();
 
-  const [menu, timeZone] = await Promise.all([
+  const [menu, timeZone, theme] = await Promise.all([
     getPublicMenu(restaurant.id),
     getRestaurantTimezone(restaurant.id),
+    // Tema da casa (Etapa 9). Falha aqui não derruba o cardápio: a leitura cai
+    // no tema padrão, que é o fallback do item 10 do escopo.
+    getPublicRestaurantTheme(restaurant.id),
   ]);
 
   const hours = readOpeningHours(restaurant.settings);
   const week = hours ? describeWeek(hours) : [];
 
   return (
-    <div className="min-h-dvh bg-ink-50">
+    <ThemeScope theme={theme} className="min-h-dvh">
       {/* Dados estruturados: ajuda o Google a mostrar nome/horário. */}
       <script
         type="application/ld+json"
@@ -115,27 +120,32 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
         }}
       />
 
-      <PublicHeader restaurant={restaurant} menu={menu} timeZone={timeZone} />
+      <PublicHeader
+        restaurant={restaurant}
+        menu={menu}
+        timeZone={timeZone}
+        theme={theme}
+      />
 
-      <PublicMenuView menu={menu} />
+      <PublicMenuView menu={menu} theme={theme} />
 
       {/* Rodapé: identidade + horários, sem virar tela de configurações */}
-      <footer className="border-t border-ink-200/70 bg-white pb-safe">
+      <footer className="border-t border-[var(--mv-border)] bg-[var(--mv-surface)] pb-safe">
         <div className="mx-auto w-full max-w-lg px-4 py-6">
           {week.length > 0 && (
             <>
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-400">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--mv-text-muted)]">
                 Horários
               </h2>
               <dl className="mt-2 space-y-1">
                 {week.map((day) => (
                   <div key={day.day} className="flex items-baseline justify-between gap-4">
-                    <dt className="text-sm capitalize text-ink-600">{day.label}</dt>
+                    <dt className="text-sm capitalize text-[var(--mv-text-muted)]">{day.label}</dt>
                     <dd
                       className={
                         day.text === "Fechado"
-                          ? "text-sm text-ink-400"
-                          : "text-sm font-medium tabular-nums text-ink-800"
+                          ? "text-sm text-[var(--mv-text-muted)]"
+                          : "text-sm font-medium tabular-nums text-[var(--mv-text)]"
                       }
                     >
                       {day.text}
@@ -146,18 +156,18 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
             </>
           )}
 
-          <p className="mt-6 flex flex-wrap items-center justify-center gap-1.5 text-center text-xs text-ink-400">
+          <p className="mt-6 flex flex-wrap items-center justify-center gap-1.5 text-center text-xs text-[var(--mv-text-muted)]">
             <span>{restaurant.name}</span>
             <span aria-hidden="true">·</span>
             <Link
               href="/"
-              className="inline-flex min-h-11 items-center px-1 font-semibold text-brand-700 underline-offset-2 hover:underline"
+              className="inline-flex min-h-11 items-center px-1 font-semibold text-[var(--mv-primary)] underline-offset-2 hover:underline"
             >
               cardápio feito com Menuvo
             </Link>
           </p>
         </div>
       </footer>
-    </div>
+    </ThemeScope>
   );
 }
