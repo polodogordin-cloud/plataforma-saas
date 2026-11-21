@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ORDER_NOTES_MAX } from "@/lib/cart";
 
 /** Validações compartilhadas entre formulários e Server Actions. */
 
@@ -240,3 +241,43 @@ export const nfcTagSchema = z.object({
 });
 
 export type NfcTagInput = z.infer<typeof nfcTagSchema>;
+
+/* ==========================================================================
+   Etapa 6 · Pedido
+   ========================================================================== */
+
+/**
+ * Item enviado ao servidor: **apenas** produto e quantidade.
+ *
+ * `z.object` sem `.passthrough()` descarta qualquer chave extra — se o
+ * navegador mandar `price`/`total`, o valor morre aqui antes de chegar na RPC.
+ * E mesmo que chegasse, `create_order` só lê produto e quantidade.
+ */
+export const orderItemInputSchema = z.object({
+  product_id: z.string().uuid("Produto inválido."),
+  // 1..99 espelha o CHECK do banco: nada de quantidade zero, negativa ou absurda.
+  quantity: z
+    .number()
+    .int("Quantidade inválida.")
+    .min(1, "Quantidade mínima é 1.")
+    .max(99, "Quantidade máxima é 99."),
+});
+
+export const orderInputSchema = z.object({
+  tableToken: z
+    .string()
+    .trim()
+    .regex(/^[2-9A-HJKMNP-Z]{10,64}$/i, "Mesa não identificada."),
+  items: z
+    .array(orderItemInputSchema)
+    .min(1, "Seu carrinho está vazio.")
+    .max(50, "Muitos itens diferentes no mesmo pedido."),
+  notes: z
+    .string()
+    .trim()
+    .max(ORDER_NOTES_MAX, `A observação pode ter no máximo ${ORDER_NOTES_MAX} caracteres.`)
+    .optional()
+    .default(""),
+});
+
+export type OrderInput = z.infer<typeof orderInputSchema>;
