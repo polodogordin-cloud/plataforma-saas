@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { Clock, MapPin, Star, Store } from "lucide-react";
+import { TableBadge } from "@/components/public/table-badge";
 import { getOpeningState } from "@/lib/opening-hours";
 import { formatPrice } from "@/lib/validation";
 import type { PublicMenu, PublicProduct, PublicRestaurant } from "@/lib/types";
@@ -15,10 +16,13 @@ export function PublicHeader({
   restaurant,
   menu,
   timeZone,
+  tableName,
 }: {
   restaurant: PublicRestaurant;
   menu: PublicMenu;
   timeZone: string;
+  /** Quando o acesso veio por QR Code/NFC, o rótulo da mesa. */
+  tableName?: string | null;
 }) {
   const opening = getOpeningState(restaurant, timeZone);
   const location = [restaurant.city, restaurant.state].filter(Boolean).join(" · ");
@@ -57,6 +61,10 @@ export function PublicHeader({
             <h1 className="text-[1.4rem] font-semibold leading-tight tracking-tight text-white text-balance">
               {restaurant.name}
             </h1>
+
+            {tableName && (
+              <TableBadge name={tableName} variant="dark" className="mt-1.5" />
+            )}
 
             {restaurant.description && (
               <p className="mt-1 line-clamp-2 text-sm leading-snug text-white/75">

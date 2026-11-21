@@ -5,8 +5,7 @@ import { PublicHeader } from "@/components/public/public-header";
 import { PublicMenuView } from "@/components/public/public-menu";
 import { getPublicMenu, getPublicRestaurant, normalizeSlug } from "@/lib/data/public-menu";
 import { describeWeek, readOpeningHours } from "@/lib/opening-hours";
-import { createClient } from "@/lib/supabase/server";
-import type { Restaurant } from "@/lib/types";
+import { getRestaurantTimezone } from "@/lib/data/timezone";
 
 type Params = { slug: string };
 
@@ -161,23 +160,4 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
       </footer>
     </div>
   );
-}
-
-/**
- * Fuso do restaurante. A view pública não expõe `timezone`, então lemos da
- * tabela base com a sessão do visitante — que pode não ter. Nesse caso, cai no
- * fuso padrão brasileiro, que é o correto para 100% dos tenants atuais.
- */
-async function getRestaurantTimezone(restaurantId: string): Promise<string> {
-  try {
-    const supabase = await createClient();
-    const { data } = await supabase
-      .from("restaurants")
-      .select("timezone")
-      .eq("id", restaurantId)
-      .maybeSingle();
-    return (data as Pick<Restaurant, "timezone"> | null)?.timezone ?? "America/Sao_Paulo";
-  } catch {
-    return "America/Sao_Paulo";
-  }
 }

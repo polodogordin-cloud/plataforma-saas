@@ -191,3 +191,115 @@ nav,
 .tap-target {
   user-select: none;
 }
+
+/* ------------------------------------------------------------------ impressão
+ *
+ * Etapa 4: imprimir o QR Code de uma mesa.
+ *
+ * "Imprimir" não pode despejar o painel na folha. Em vez de tentar esconder
+ * cada botão da aplicação, utilizamos uma raiz de impressão dedicada: na tela
+ * a área `.print-sheet` fica invisível; no papel, só ela existe.
+ */
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  /*
+   * Esconde a interface. `visibility` (e não `display`) porque o cartão de
+   * impressão mora em um portal dentro do <body>: zerar o display dos
+   * ancestrais o levaria junto.
+   */
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-sheet,
+  .print-sheet * {
+    visibility: visible !important;
+  }
+
+  .print-sheet {
+    z-index: 9999;
+    background: #fff;
+    display: grid !important;
+    position: fixed;
+    inset: 0;
+    place-content: center;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-card {
+    display: grid;
+    justify-items: center;
+    gap: 0.35rem;
+    width: 100mm;
+    padding: 8mm 6mm 6mm;
+    border: 1.5px solid #111827;
+    border-radius: 4mm;
+    background: #fff;
+    text-align: center;
+    break-inside: avoid;
+    color: #111827;
+  }
+
+  .print-card__eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 1.5mm;
+    margin: 0;
+    font-size: 9pt;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #6b7280;
+  }
+
+  .print-card__eyebrow svg {
+    width: 9pt;
+    height: 9pt;
+  }
+
+  .print-card__name {
+    margin: 0;
+    font-size: 22pt;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+  }
+
+  .print-card__qr {
+    width: 68mm;
+    height: 68mm;
+    margin: 2mm 0;
+  }
+
+  .print-card__hint {
+    margin: 0;
+    font-size: 10pt;
+    line-height: 1.35;
+    color: #374151;
+  }
+
+  .print-card__code {
+    margin: 0;
+    font-size: 8.5pt;
+    color: #6b7280;
+  }
+}

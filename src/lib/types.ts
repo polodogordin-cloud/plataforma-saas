@@ -189,3 +189,42 @@ export type OpeningState = {
   /** Detalhe secundário, ex.: "Abre hoje às 18:00". */
   detail?: string;
 };
+
+/* ==========================================================================
+   Etapa 4 · Mesas e QR Codes
+   ========================================================================== */
+
+/** Ocupação no salão. Independente de `is_active` (que é visibilidade). */
+export type TableStatus = "free" | "occupied" | "reserved" | "inactive";
+
+export const TABLE_STATUS_LABEL: Record<TableStatus, string> = {
+  free: "Livre",
+  occupied: "Ocupada",
+  reserved: "Reservada",
+  inactive: "Fora de uso",
+};
+
+export type RestaurantTable = {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  code: string | null;
+  notes: string | null;
+  /** Base da URL pública do QR Code e da TAG NFC. Nunca exposto ao cliente. */
+  public_token: string;
+  is_active: boolean;
+  status: TableStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * Contexto resolvido a partir do token. É o mínimo que a página pública
+ * precisa: o restaurante, o rótulo da mesa e o id interno (usado só no
+ * servidor, para a Etapa 6 amarrar o pedido à mesa certa).
+ */
+export type TableContext = {
+  restaurant_id: string;
+  table_id: string;
+  table_name: string;
+};

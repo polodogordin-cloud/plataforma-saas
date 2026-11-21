@@ -177,3 +177,38 @@ export function toUuidOrNull(value: FormDataEntryValue | null | undefined): stri
     ? raw
     : null;
 }
+
+/* ==========================================================================
+   Etapa 4 · Mesas
+   ========================================================================== */
+
+/** Sugestão de próximo número: "Mesa 03" → "Mesa 04". */
+export function nextTableName(existing: string[]): string {
+  let max = 0;
+  for (const name of existing) {
+    const match = /^\s*mesa\s*(\d+)\s*$/i.exec(name);
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return `Mesa ${String(max + 1).padStart(2, "0")}`;
+}
+
+export const tableSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Dê um nome à mesa.")
+    .max(60, "O nome pode ter no máximo 60 caracteres."),
+  code: z
+    .string()
+    .trim()
+    .max(40, "O código pode ter no máximo 40 caracteres."),
+  notes: z
+    .string()
+    .trim()
+    .max(300, "A observação pode ter no máximo 300 caracteres."),
+  isActive: z.boolean(),
+  /** Ocupação do salão; independente de `isActive` (visibilidade pública). */
+  status: z.enum(["free", "occupied", "reserved"]).optional(),
+});
+
+export type TableInput = z.infer<typeof tableSchema>;

@@ -19,7 +19,14 @@ const SCROLL_OFFSET = 96;
  * - Busca instantânea no cliente: o cardápio inteiro já veio no HTML, então
  *   filtrar é instantâneo e funciona sem rede.
  */
-export function PublicMenuView({ menu }: { menu: PublicMenu }) {
+export function PublicMenuView({
+  menu,
+  tableName,
+}: {
+  menu: PublicMenu;
+  /** Presente quando o acesso veio por QR Code/NFC. Reservado para o carrinho. */
+  tableName?: string | null;
+}) {
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(menu.sections[0]?.id ?? null);
   const [selected, setSelected] = useState<PublicProduct | null>(null);

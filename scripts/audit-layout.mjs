@@ -13,7 +13,16 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
-const ROUTES = ["/", "/entrar", "/criar-conta", "/recuperar-senha"];
+const ROUTES = [
+  "/",
+  "/entrar",
+  "/criar-conta",
+  "/recuperar-senha",
+  // Etapa 4: cardápio público sem mesa, painel de mesas e URL de mesa com QR.
+  "/r/burger-house",
+  "/r/burger-house/table/H62U243ECFBJFX55ZXDSKDQY",
+  "/app/mesas",
+];
 const MAX_WIDTH = 430;
 
 let failures = 0;
