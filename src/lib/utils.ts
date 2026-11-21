@@ -24,3 +24,17 @@ export function formatDate(iso: string, locale = "pt-BR"): string {
     return iso;
   }
 }
+
+/**
+ * Normaliza texto para busca: sem acentos, minúsculo e espaços colapsados.
+ * "Pão de Alho" e "pao de alho" passam a casar — essencial em pt-BR, onde o
+ * cliente digita no celular sem acentuação.
+ */
+export function normalizeSearch(value: string | null | undefined): string {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}

@@ -6,11 +6,15 @@ pizzarias, bares e cafeterias.
 **Etapa 1 — fundação.** Landing page, autenticação completa, onboarding do
 restaurante, dashboard mobile e configurações.
 
-**Etapa 2 — categorias e produtos (atual).** O painel `/app/cardapio` deixou de ser
-placeholder: cria, edita, exclui, ativa/desativa e reordena categorias; cadastra e
-edita produtos com nome, descrição, preço, categoria, disponibilidade, destaque e
-código interno; busca por nome/descrição/código e filtro por categoria. Tudo com
-arrastar-e-soltar otimizado para toque e bottom sheets no lugar de tabelas.
+**Etapa 2 — categorias e produtos.** O painel `/app/cardapio` cria, edita, exclui,
+ativa/desativa e reordena categorias; cadastra e edita produtos com nome, descrição,
+preço, categoria, disponibilidade, destaque e código interno; busca por
+nome/descrição/código e filtro por categoria. Arrastar-e-soltar otimizado para toque.
+
+**Etapa 3 — cardápio público (atual).** Cada restaurante publicado tem um cardápio
+em `/r/{slug}`, sem login: capa com logo e status de funcionamento, abas de
+categoria com rolagem lateral sincronizada com a página, busca instantânea, e
+detalhe do produto em tela cheia com quantidade. Nada de tela administrativa.
 
 > 📱 Prioridade absoluta: **mobile**. Cada tela foi desenhada para uso com uma mão
 > em telas de 320px a 430px. No desktop o conteúdo é centralizado em uma coluna
@@ -152,6 +156,38 @@ products              ← restaurant_id, category_id, name, description,
   `product_options` (adicionais, complementos, sabores, tamanhos) e `promotions` +
   `promotion_items` (promoções, combos) já existem com RLS ativa.
 
+### Cardápio público (Etapa 3)
+
+O cliente abre `/r/{slug}` **sem criar conta**. Isso não é feito abrindo as tabelas
+para o role `anon` — seria vazar telefone, endereço e `settings` de todo restaurante,
+inclusive dos que ainda não publicaram.
+
+Em vez disso, três views com `security_invoker = false` funcionam como allowlist de
+colunas e de linhas:
+
+| View | Expõe | Filtro |
+| --- | --- | --- |
+| `public_restaurants` | nome, slug, logo, descrição, cidade/UF, moeda, `settings` | `status = 'published'` |
+| `public_categories` | id, nome, descrição, imagem, ordem | categoria ativa + restaurante publicado |
+| `public_products` | id, nome, descrição, preço, imagem, destaque, ordem | disponível + categoria ativa + publicado |
+
+- **Allowlist de colunas:** `phone`, `address_line`, `settings` brutos de terceiros e
+  `internal_code` não existem nas views. Coluna nova no schema não vaza sozinha.
+- **Rascunho não vaza pelo produto:** um produto só aparece se a **categoria** dele
+  estiver ativa. Sem isso, ocultar uma categoria ainda exporia os itens dela.
+- **Produto sem categoria não aparece** no cardápio público.
+- **Rascunho e inexistente dão a mesma resposta** (404), para não ser possível
+  descobrir quais slugs estão cadastrados.
+- Pausar o restaurante esconde tudo sem apagar nada; republicar restaura.
+- `anon` recebe `select` apenas nas três views; as tabelas base seguem fechadas.
+
+**Horário de funcionamento** vive em `restaurants.settings.opening_hours` (jsonb já
+existente, sem migração nova), no formato
+`{ "mon": { "closed": false, "open": "18:00", "close": "23:30" }, ... }`.
+O cálculo usa o **fuso do restaurante**, trata turno que passa da meia-noite
+(18:00 → 02:00) e, sem configuração, o cardápio **não afirma** estar aberto.
+"Fechado" nunca diz "abre hoje" com um horário que já passou.
+
 ---
 
 ## Rotas
@@ -168,6 +204,8 @@ products              ← restaurant_id, category_id, name, description,
 | `/app`                                | Dashboard (Início)                              |
 | `/app/cardapio`                       | Cardápio: categorias e produtos (Etapa 2)       |
 | `/app/cardapio/produtos`              | Lista completa de produtos com busca e filtros  |
+| `/r/[slug]`                           | **Cardápio público (sem login)**                |
+| `/sitemap.xml`, `/robots.txt`         | Indexação — só cardápios publicados             |
 | `/app/mesas`                          | Mesas — Etapa 4/5                               |
 | `/app/pedidos`                        | Pedidos — Etapa 6/7                             |
 | `/app/configuracoes`                  | Hub de configurações                            |
@@ -199,8 +237,10 @@ src/
 ├── components/
 │   ├── app/            AppHeader, BottomNav, StatCard, StatusToggle
 │   ├── auth/           AuthShell
-│   ├── menu/           MenuManager, CategoryCard, ProductCard, sheets,
-│   │                   ProductsBrowser e o SortableProvider (dnd-kit)
+│   ├── menu/           Painel: MenuManager, CategoryCard, ProductCard,
+│   │                   sheets, ProductsBrowser, SortableProvider (dnd-kit)
+│   ├── public/         Cardápio do cliente: PublicHeader, PublicMenuView,
+│   │                   ProductRow, ProductDetail
 │   └── ui/             Button, Field, Card, Badge, Sheet, Switch,
 │                       ConfirmSheet, ComingSoon…
 ├── lib/
@@ -208,11 +248,13 @@ src/
 │   ├── supabase/       client, server, middleware
 │   ├── types.ts        tipos de domínio
 │   ├── utils.ts        helpers
+│   ├── opening-hours.ts horário de funcionamento (fuso, meia-noite)
 │   └── validation.ts   schemas Zod
 └── middleware.ts
 supabase/migrations/    schema aplicado via Supabase
                         0001_init.sql (Etapa 1)
                         0002_menu_categories_products.sql (Etapa 2)
+                        0003_public_menu.sql (Etapa 3)
 scripts/                auditoria de layout + teste de RLS
 ```
 
@@ -240,7 +282,7 @@ scripts/                auditoria de layout + teste de RLS
 | Etapa | Escopo                          | Onde encaixa                                        |
 | ----- | ------------------------------- | --------------------------------------------------- |
 | ~~2~~ | ~~Categorias e produtos~~       | ~~`/app/cardapio` — **concluída**~~                 |
-| 3     | Cardápio público                | rota pública por `slug`; `restaurants.status`        |
+| ~~3~~ | ~~Cardápio público~~            | ~~`/r/[slug]` — **concluída**~~                     |
 | 4     | Mesas + QR Code                 | `tables`; `/app/mesas`; lib de QR                   |
 | 5     | NFC                             | URLs curtas por mesa (`/t/:code`)                   |
 | 6     | Carrinho e pedidos              | `orders`, `order_items`; RLS + realtime             |

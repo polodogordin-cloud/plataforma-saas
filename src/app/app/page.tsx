@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import {
   ArrowRight,
   BookOpenText,
+  ExternalLink,
   ClipboardList,
   LayoutGrid,
   Package,
@@ -15,6 +16,7 @@ import {
 import { AppHeader } from "@/components/app/app-header";
 import { StatCard } from "@/components/app/stat-card";
 import { StatusToggle } from "@/components/app/status-toggle";
+import { PublicLink } from "@/components/app/public-link";
 import { Badge, Card, SectionTitle } from "@/components/ui/card";
 import {
   getActiveRestaurant,
@@ -107,13 +109,24 @@ export default async function DashboardPage() {
                   ? `${restaurant.city}${restaurant.state ? ` · ${restaurant.state}` : ""}`
                   : "Endereço não informado"}
               </p>
-              <p className="mt-1 truncate text-xs text-brand-700">menuvo.app/{restaurant.slug}</p>
+              <Link
+                href={`/r/${restaurant.slug}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-flex max-w-full items-center gap-1 truncate text-xs font-medium text-brand-700"
+              >
+                <span className="truncate">/r/{restaurant.slug}</span>
+                <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
+              </Link>
             </div>
           </div>
           <div className="border-t border-ink-100 px-4 py-3">
             <StatusToggle status={restaurant.status} />
           </div>
         </Card>
+
+        {/* Cardápio público: o que o cliente vê e como compartilhar */}
+        <PublicLink slug={restaurant.slug} status={restaurant.status} />
 
         {/* Resumos */}
         <section aria-labelledby="resumo">
@@ -226,9 +239,7 @@ export default async function DashboardPage() {
         )}
 
         <p className="pb-2 text-center text-xs leading-relaxed text-ink-400">
-          Etapa 1 · Base do painel pronta.
-          <br />
-          Cardápio, mesas e pedidos chegam nas próximas etapas.
+          Cardápio publicado · Mesas e pedidos chegam nas próximas etapas.
         </p>
       </main>
     </>

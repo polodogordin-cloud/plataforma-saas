@@ -95,6 +95,7 @@ for (const file of walk("src")) {
     const block = source.split("\n").slice(index, index + 16).join(" ");
     // Backdrop de modal: cobre a viewport inteira, não é um alvo pequeno.
     if (/absolute inset-0/.test(block)) return;
+
     if (!SAFE.test(block)) {
       console.log(`⚠️  alvo de toque pequeno? ${file}:${index + 1}`);
       warnings++;
