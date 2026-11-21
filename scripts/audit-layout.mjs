@@ -22,6 +22,8 @@ const ROUTES = [
   "/r/burger-house",
   "/r/burger-house/table/H62U243ECFBJFX55ZXDSKDQY",
   "/app/mesas",
+  // Etapa 7: painel de pedidos (exige sessão; sem login redireciona para /entrar)
+  "/app/pedidos",
 ];
 const MAX_WIDTH = 430;
 
@@ -32,8 +34,23 @@ console.log(`\nAuditoria de layout — ${BASE}\n`);
 
 /* ------------------------------------------------------------------ rotas */
 for (const route of ROUTES) {
-  const res = await fetch(BASE + route);
+  // `manual`: rota protegida redireciona para /entrar, e seguir o redirect
+  // testaria a tela de login em vez da rota pedida.
+  const res = await fetch(BASE + route, { redirect: "manual" });
   const html = await res.text();
+
+  // 307 = middleware de sessão redirecionando: a rota existe e está protegida.
+  if (res.status === 307) {
+    const location = res.headers.get("location") ?? "";
+    const toLogin = location.includes("/entrar");
+    console.log(
+      toLogin
+        ? `✅ ${route}: 307 · protegida (login)`
+        : `❌ ${route}: 307 inesperado para ${location}`,
+    );
+    if (!toLogin) failures++;
+    continue;
+  }
 
   if (res.status !== 200) {
     console.log(`❌ ${route}: HTTP ${res.status}`);

@@ -327,6 +327,58 @@ Preparação (sem implementar): `channel` (`dine_in | takeaway | delivery`),
 impressão, chamada de garçom e pedido de conta ficam para as próximas etapas —
 a interface reserva o encaixe (`#product-detail-options`) sem inventar regra.
 
+### Painel de pedidos em tempo real (Etapa 7)
+
+Do outro lado do balcão: o restaurante recebe, acompanha e move cada pedido
+pelo celular, com o fluxo **novo → confirmado → em preparo → pronto → entregue**
+(e cancelamento enquanto não finalizou).
+
+| Objeto | Papel |
+| --- | --- |
+| `public.order_status_events` | histórico append-only, escrito por trigger em cada transição |
+| `public.set_order_status(order, status)` | RPC que valida transição **e** vínculo de equipe |
+| `public.list_restaurant_orders(...)` | lista paginada por status, com itens embutidos |
+| `public.order_board_counts(...)` | os três números do dashboard numa consulta |
+| `public.restaurant_orders` | view com `items` (jsonb) e `item_count` |
+
+- **Histórico é do banco, não da aplicação.** Um trigger em `orders` grava cada
+  mudança de status com autor (`auth.uid()`) e horário. Não existe caminho que
+  mude status sem deixar registro — inclusive uma alteração feita direto no SQL.
+  O pedido do cliente nasce com autor nulo, e isso é correto: quem pediu era
+  `anon`, não um usuário do app.
+- **Transição válida é regra do servidor.** `set_order_status` recusa pular
+  etapa (pendente → entregue) e recusa voltar (entregue → em preparo). Esconder
+  botão na tela é conveniência; a regra está onde não dá para contornar.
+- **Tempo real de verdade, sem polling.** `orders` e `order_status_events` estão
+  na publicação `supabase_realtime` com `replica identity full`. O painel assina
+  o canal e, ao receber um evento, **relê** a lista pela RPC — o evento é o
+  sinal, a RPC é a fonte de verdade (com itens, nome da mesa e RLS). Sem evento,
+  zero consultas: não há `setInterval` em lugar nenhum.
+- **Reconexão não deixa dado velho.** Se o canal cai (celular perdeu sinal, tela
+  bloqueou), a tela mostra "sem conexão em tempo real" e, ao reconectar, refaz a
+  leitura — senão os pedidos que chegaram no intervalo ficariam invisíveis.
+- **Som é sintetizado, não baixado.** Dois tons com WebAudio: nada para carregar
+  antes do primeiro "bi". O navegador só libera áudio depois de um gesto, então
+  há um botão explícito "Ativar som" — e o painel funciona inteiro com o som
+  mudo. Vibração (`navigator.vibrate`) entra quando o aparelho suporta.
+- **Alerta não depende de cor.** Todo status tem ícone + texto + cor. O selo diz
+  "Novo pedido", o sino acompanha, e o tempo de espera muda de rótulo quando
+  passa de 15 min. Quem não distingue as cores lê a mesma informação.
+- **Histórico não carrega tudo.** A lista ativa é curta por natureza; os
+  finalizados chegam em páginas de 10 com cursor por `order_number` — que, ao
+  contrário de `created_at`, não empata quando dois pedidos caem na mesma
+  transação (caso de maior movimento, e o que a primeira versão errava).
+- **Por mesa, sem tela nova.** As mesas com pedido vivo viram chips no topo da
+  lista; tocar filtra. Um painel a mais só para ver "Mesa 04 tem 2 pedidos"
+  seria navegação sem necessidade.
+- **Só a equipe.** Leitura e escrita passam por RPC que confere
+  `is_restaurant_member`, com RLS como segunda camada. Pedido de outro
+  restaurante é indistinguível de pedido inexistente.
+
+Preparação (sem implementar): push, som em dispositivo externo (impressora,
+campainha de cozinha) e integração com WhatsApp ficam para as próximas etapas —
+o alerta já nasce isolado em `src/lib/notify.ts`, com um ponto único de disparo.
+
 ---
 
 ---
@@ -351,7 +403,7 @@ a interface reserva o encaixe (`#product-detail-options`) sem inventar regra.
 | `/app/mesas/[id]/qr`                  | Download do QR (`?format=png` ou `?format=svg`) |
 | `/app/mesas` (sheet NFC)              | TAGs da mesa: URL, status, histórico (Etapa 5)  |
 | `/sitemap.xml`, `/robots.txt`         | Indexação — só cardápios publicados             |
-| `/app/pedidos`                        | Pedidos — painel da equipe (Etapa 7)            |
+| `/app/pedidos`                        | **Painel de pedidos em tempo real** (Etapa 7)   |
 | `/app/configuracoes`                  | Hub de configurações                            |
 | `/app/configuracoes/conta`            | Conta do usuário                                |
 | `/app/configuracoes/restaurante`      | Dados do restaurante                            |
@@ -373,7 +425,8 @@ src/
 │   ├── menu.ts         categorias e produtos (CRUD, toggle, reordenação)
 │   ├── tables.ts       mesas (CRUD, ativar/desativar, ocupação, novo token)
 │   ├── nfc.ts          TAGs NFC das mesas
-│   └── orders.ts       criação e releitura de pedidos (Etapa 6)
+│   ├── orders.ts       criação e releitura de pedidos (Etapa 6)
+│   └── orders-panel.ts status, anotações e histórico (Etapa 7)
 ├── app/
 │   ├── layout.tsx      metadata, viewport, manifest
 │   ├── page.tsx        landing
@@ -389,6 +442,9 @@ src/
 │   ├── public/         Cardápio do cliente: PublicHeader, PublicMenuView,
 │   │                   ProductRow, ProductDetail, TableBadge,
 │   │                   CartProvider, CartBar, CartSheet, OrderSuccess
+│   ├── orders/         Painel da equipe: OrdersPanel, OrderCard,
+│   │                   OrderDetailSheet, OrderBoardCards, hooks de
+│   │                   tempo real e de paginação
 │   ├── tables/         Painel de mesas: TablesManager, TableCard,
 │   │                   TableSheet, QrSheet, QrPrintCard,
 │   │                   NfcPanel, NfcSheet, NfcTagSheet, NfcStatusBadge
@@ -404,6 +460,10 @@ src/
 │   ├── table-session.ts cookie de contexto da mesa (QR/NFC)
 │   ├── nfc.ts          resumo de TAGs por mesa (módulo neutro, uso no cliente)
 │   ├── cart.ts         regras do carrinho (módulo neutro, testável)
+│   ├── order-status.ts ícone, rótulo e cor de cada status
+│   ├── order-time.ts   tempo de espera e alerta de atraso
+│   ├── notify.ts       som (WebAudio), vibração e preferência
+│   ├── realtime.ts     nome do canal de tempo real
 │   └── validation.ts   schemas Zod
 └── middleware.ts
 supabase/migrations/    schema aplicado via Supabase
@@ -414,6 +474,7 @@ supabase/migrations/    schema aplicado via Supabase
                         0005_table_nfc.sql (Etapa 5)
                         0006_nfc_stale_and_replaced.sql (correções da Etapa 5)
                         0007_orders.sql (Etapa 6)
+                        0008_order_panel.sql (Etapa 7)
 scripts/                auditoria de layout + teste de RLS
 ```
 
@@ -431,6 +492,9 @@ scripts/                auditoria de layout + teste de RLS
 - **Bottom nav fixa** com 5 destinos, ícone + rótulo e indicador ativo.
 - **Estados honestos**: telas não implementadas mostram “Em breve” com a etapa
   correspondente — nunca dados fictícios apresentados como reais.
+- **Tempo real sem polling.** O painel não consulta em intervalo: assina o
+  canal, e o evento só dispara uma releitura. Menos requisição, menos bateria no
+  celular do salão e a lista certa no instante em que o pedido chega.
 - **Total do pedido é do servidor.** A UI mostra uma estimativa enquanto o
   cliente monta o carrinho (soma em centavos inteiros, para não aparecer
   `113.60000000000001`), mas a tela de sucesso exibe o número que o banco
@@ -458,7 +522,7 @@ scripts/                auditoria de layout + teste de RLS
 | ~~4~~ | ~~Mesas + QR Code~~             | ~~`/app/mesas` + `/app/mesas/[id]/qr` — **concluída**~~ |
 | ~~5~~ | ~~NFC das mesas~~               | ~~TAGs da mesa (mesma URL do QR) — **concluída**~~  |
 | ~~6~~ | ~~Carrinho e pedidos~~          | ~~`orders`, `order_items`, `create_order` — **concluída**~~ |
-| 7     | Painel de pedidos               | `/app/pedidos`; Supabase Realtime                   |
+| ~~7~~ | ~~Painel de pedidos~~           | ~~`/app/pedidos` + tempo real — **concluída**~~     |
 | 8     | Personalização do cardápio      | `restaurants.settings` (jsonb) + upload de logo     |
 | 9     | Planos e assinaturas            | `plans`, `subscriptions`; gate por `restaurant_id`   |
 | 10    | Publicação e produção           | domínios, observabilidade, cache                    |
