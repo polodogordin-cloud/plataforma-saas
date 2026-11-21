@@ -10,6 +10,7 @@ import {
   ClipboardList,
   LayoutGrid,
   Package,
+  Palette,
   Plus,
   Store,
   UtensilsCrossed,
@@ -46,6 +47,13 @@ const quickActions = [
     label: "Mesas e QR Codes",
     description: "Organize o salão",
     icon: UtensilsCrossed,
+    primary: false,
+  },
+  {
+    href: "/app/configuracoes/personalizacao",
+    label: "Personalizar cardápio",
+    description: "Cores, capa e estilo",
+    icon: Palette,
     primary: false,
   },
   {

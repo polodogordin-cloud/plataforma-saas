@@ -39,10 +39,10 @@ const groups: { title: string; items: Item[] }[] = [
         icon: Store,
       },
       {
-        label: "Personalização do cardápio",
-        description: "Cores, capa e identidade visual",
+        href: "/app/configuracoes/personalizacao",
+        label: "Personalizar cardápio",
+        description: "Logo, capa, cores e estilos",
         icon: Palette,
-        badge: "Etapa 8",
       },
     ],
   },
@@ -172,7 +172,7 @@ export default async function SettingsPage() {
         </form>
 
         <p className="pb-2 text-center text-xs text-ink-400">
-          Menuvo · versão 0.1.0 (Etapa 1)
+          Menuvo · versão 0.9.0 (Etapa 9)
         </p>
       </main>
     </>

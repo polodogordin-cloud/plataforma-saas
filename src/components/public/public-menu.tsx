@@ -14,6 +14,7 @@ import {
   lastOrderStorageKey,
   readLastOrderNumber,
 } from "@/components/public/order-success";
+import { cardRadius, cardShadow, DEFAULT_THEME } from "@/lib/theme";
 import { readTableOrder } from "@/actions/orders";
 import { readTableRequestState } from "@/actions/table-requests";
 import type {
@@ -21,6 +22,7 @@ import type {
   PublicMenuSection,
   PublicProduct,
   TableOrder,
+  RestaurantTheme,
   TableRequestState,
   TableRequestType,
 } from "@/lib/types";
@@ -41,16 +43,23 @@ export function PublicMenuView({
   menu,
   tableName,
   tableToken,
+  theme = DEFAULT_THEME,
 }: {
   menu: PublicMenu;
   /** Presente quando o acesso veio por QR Code/NFC: só aí é possível pedir. */
   tableName?: string | null;
   /** Token da mesa (QR/NFC). Credencial do pedido; nunca digitado. */
   tableToken?: string | null;
+  /**
+   * Tema do restaurante (Etapa 9). Passado de fora porque quem lê o banco é a
+   * página; aqui só se consome as variáveis `--mv-*`. O padrão existe para o
+   * preview do painel e para nunca renderizar sem cor.
+   */
+  theme?: RestaurantTheme;
 }) {
   return (
     <CartProvider tableToken={tableToken ?? null} tableName={tableName ?? null}>
-      <MenuBody menu={menu} />
+      <MenuBody menu={menu} theme={theme} />
     </CartProvider>
   );
 }
@@ -72,7 +81,7 @@ function forgetLastOrder(tableToken: string | null) {
  * confirmação (painel) e sucesso (tela cheia depois do envio). Na volta do
  * sucesso, o carrinho já foi limpo e o cliente continua de onde parou.
  */
-function MenuBody({ menu }: { menu: PublicMenu }) {
+function MenuBody({ menu, theme }: { menu: PublicMenu; theme: RestaurantTheme }) {
   const { addItem, count, canOrder, tableToken, quantityOf } = useCart();
 
   const [query, setQuery] = useState("");
@@ -242,17 +251,24 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
      Fica depois de todos os hooks — um return antes deles muda a ordem entre
      renders e o React recusa ("Rendered fewer hooks than expected"). */
   if (sent) {
-    return <OrderSuccess order={sent} tableToken={tableToken} onBackToMenu={backToMenu} />;
+    return (
+      <OrderSuccess
+        order={sent}
+        tableToken={tableToken}
+        theme={theme}
+        onBackToMenu={backToMenu}
+      />
+    );
   }
 
   return (
     <>
       {/* ---------------------------------------------------------- busca */}
-      <div className="sticky top-0 z-30 border-b border-ink-200/60 bg-ink-50/85 backdrop-blur-lg">
+      <div className="sticky top-0 z-30 border-b border-[var(--mv-border)] bg-[var(--mv-bg)]/90 backdrop-blur-lg">
         <div className="mx-auto w-full max-w-lg px-4 pb-2.5 pt-3">
           <div className="relative">
             <Search
-              className="pointer-events-none absolute left-3.5 top-1/2 size-4.5 -translate-y-1/2 text-ink-400"
+              className="pointer-events-none absolute left-3.5 top-1/2 size-4.5 -translate-y-1/2 text-[var(--mv-text-muted)]"
               aria-hidden="true"
             />
             <input
@@ -262,14 +278,14 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Buscar no cardápio"
               aria-label="Buscar no cardápio"
-              className="w-full rounded-xl border border-ink-200 bg-white py-2.5 pl-11 pr-11 text-ink-900 shadow-sm placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100"
+              className="w-full rounded-xl border border-[var(--mv-border)] bg-[var(--mv-surface)] py-2.5 pl-11 pr-11 text-[var(--mv-text)] shadow-sm placeholder:text-[var(--mv-text-muted)] focus:border-[var(--mv-primary)] focus:outline-none focus:ring-4 focus:ring-[var(--mv-primary-soft)]"
             />
             {query && (
               <button
                 type="button"
                 onClick={clearSearch}
                 aria-label="Limpar busca"
-                className="absolute right-1 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-lg text-ink-400 transition hover:text-ink-700"
+                className="absolute right-1 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-lg text-[var(--mv-text-muted)] transition hover:text-[var(--mv-text)]"
               >
                 <X className="size-4.5" aria-hidden="true" />
               </button>
@@ -300,8 +316,8 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
                         "shrink-0 whitespace-nowrap rounded-full px-3.5 text-[0.8rem] font-semibold transition-colors",
                         "min-h-11",
                         isActive
-                          ? "bg-ink-900 text-white"
-                          : "bg-white text-ink-600 ring-1 ring-inset ring-ink-200 hover:bg-ink-100",
+                          ? "bg-[var(--mv-primary)] text-[var(--mv-on-primary)]"
+                          : "bg-[var(--mv-surface)] text-[var(--mv-text-muted)] ring-1 ring-inset ring-[var(--mv-border)] hover:bg-[var(--mv-surface-muted)]",
                       )}
                     >
                       {section.name}
@@ -315,30 +331,32 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
       </div>
 
       {/* ---------------------------------------------------- destaques */}
-      {!normalizedQuery && <FeaturedStrip products={menu.featured} onSelect={setSelected} />}
+      {!normalizedQuery && (
+        <FeaturedStrip products={menu.featured} onSelect={setSelected} theme={theme} />
+      )}
 
       {/* ------------------------------------------------- resultado busca */}
       {normalizedQuery ? (
         <div className="mx-auto w-full max-w-lg px-4 pb-16 pt-4">
-          <p className="text-sm text-ink-500" role="status" aria-live="polite">
+          <p className="text-sm text-[var(--mv-text-muted)]" role="status" aria-live="polite">
             {resultCount === 0
               ? "Nenhum produto encontrado."
               : `${resultCount} ${resultCount === 1 ? "produto" : "produtos"} para “${query.trim()}”`}
           </p>
 
           {resultCount === 0 ? (
-            <div className="mt-8 rounded-2xl border border-dashed border-ink-300 bg-white px-5 py-9 text-center">
-              <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-ink-100 text-ink-400">
+            <div className="mt-8 rounded-2xl border border-dashed border-[var(--mv-border)] bg-[var(--mv-surface)] px-5 py-9 text-center">
+              <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-[var(--mv-surface-muted)] text-[var(--mv-text-muted)]">
                 <SearchX className="size-6" aria-hidden="true" />
               </span>
-              <p className="mt-3 text-sm font-medium text-ink-700">Nada com esse nome</p>
-              <p className="mx-auto mt-1 max-w-xs text-sm text-ink-500">
+              <p className="mt-3 text-sm font-medium text-[var(--mv-text)]">Nada com esse nome</p>
+              <p className="mx-auto mt-1 max-w-xs text-sm text-[var(--mv-text-muted)]">
                 Tente outra palavra ou toque em “Limpar busca” para ver o cardápio inteiro.
               </p>
               <button
                 type="button"
                 onClick={clearSearch}
-                className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-brand-600 px-4 text-sm font-semibold text-white active:scale-95"
+                className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-[var(--mv-primary)] px-4 text-sm font-semibold text-[var(--mv-on-primary)] active:scale-95"
               >
                 Limpar busca
               </button>
@@ -353,6 +371,7 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
                     onSelect={setSelected}
                     onQuickAdd={canOrder ? quickAdd : undefined}
                     quantityInCart={canOrder ? quantityOf(product.id) : 0}
+                    theme={theme}
                   />
                 )),
               )}
@@ -366,6 +385,7 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
             <Section
               key={section.id}
               section={section}
+              theme={theme}
               onSelect={setSelected}
               onQuickAdd={canOrder ? quickAdd : undefined}
               quantityOf={canOrder ? quantityOf : undefined}
@@ -377,9 +397,9 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
           ))}
 
           {menu.sections.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-5 py-10 text-center">
-              <p className="text-sm font-medium text-ink-700">Cardápio em preparação</p>
-              <p className="mx-auto mt-1 max-w-xs text-sm text-ink-500">
+            <div className="rounded-2xl border border-dashed border-[var(--mv-border)] bg-[var(--mv-surface)] px-5 py-10 text-center">
+              <p className="text-sm font-medium text-[var(--mv-text)]">Cardápio em preparação</p>
+              <p className="mx-auto mt-1 max-w-xs text-sm text-[var(--mv-text-muted)]">
                 O restaurante ainda não publicou itens. Volte em instantes.
               </p>
             </div>
@@ -390,6 +410,7 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
       <ProductDetail
         product={selected}
         open={Boolean(selected)}
+        theme={theme}
         onClose={() => setSelected(null)}
         // Sem mesa não existe pedido: o detalhe mostra o aviso do QR Code em
         // vez de encher um carrinho que nunca sairia.
@@ -407,6 +428,7 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
           busy={false}
           waiterPending={Boolean(requestState?.waiter_status)}
           billPending={Boolean(requestState?.bill_status)}
+          theme={theme}
         />
       )}
 
@@ -433,6 +455,7 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
 
       <CartSheet
         open={cartOpen}
+        theme={theme}
         onClose={() => setCartOpen(false)}
         onSent={(order) => {
           setCartOpen(false);
@@ -445,12 +468,14 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
 
 function Section({
   section,
+  theme,
   onSelect,
   onQuickAdd,
   quantityOf,
   registerRef,
 }: {
   section: PublicMenuSection;
+  theme: RestaurantTheme;
   onSelect: (product: PublicProduct) => void;
   onQuickAdd?: (product: PublicProduct) => void;
   quantityOf?: (productId: string) => number;
@@ -466,17 +491,19 @@ function Section({
       <div className="mb-2.5 flex items-baseline gap-2">
         <h2
           id={`titulo-${section.id}`}
-          className="text-[1.05rem] font-semibold tracking-tight text-ink-900"
+          className="text-[1.05rem] font-semibold tracking-tight text-[var(--mv-text)]"
         >
           {section.name}
         </h2>
-        <span className="text-xs font-medium tabular-nums text-ink-400">
+        <span className="text-xs font-medium tabular-nums text-[var(--mv-text-muted)]">
           {section.products.length}
         </span>
       </div>
 
       {section.description && (
-        <p className="mb-2.5 -mt-1 text-xs leading-snug text-ink-500">{section.description}</p>
+        <p className="mb-2.5 -mt-1 text-xs leading-snug text-[var(--mv-text-muted)]">
+          {section.description}
+        </p>
       )}
 
       <ul className="space-y-2">
@@ -487,6 +514,7 @@ function Section({
             onSelect={onSelect}
             onQuickAdd={onQuickAdd}
             quantityInCart={quantityOf?.(product.id) ?? 0}
+            theme={theme}
           />
         ))}
       </ul>

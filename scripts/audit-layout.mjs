@@ -24,6 +24,9 @@ const ROUTES = [
   "/app/mesas",
   // Etapa 7: painel de pedidos (exige sessão; sem login redireciona para /entrar)
   "/app/pedidos",
+  // Etapa 9: editor de personalização do cardápio (mesma regra de sessão)
+  "/app/configuracoes",
+  "/app/configuracoes/personalizacao",
 ];
 const MAX_WIDTH = 430;
 

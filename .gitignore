@@ -9,3 +9,6 @@ dist
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+
+# Artefatos locais dos harnesses da Etapa 9 (bundles temporários)
+.arena-test/build-*/

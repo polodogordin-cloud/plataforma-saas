@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Loader2, Minus, Plus, ReceiptText, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
+import { primaryButtonBase, primaryButtonStyle } from "@/components/public/themed";
 import { useCart } from "@/components/public/cart-provider";
 import { createOrder } from "@/actions/orders";
 import { CART_MAX_QUANTITY, ORDER_NOTES_MAX, lineTotal, toOrderItems } from "@/lib/cart";
+import { DEFAULT_THEME, themeTokens } from "@/lib/theme";
 import { formatPrice } from "@/lib/validation";
-import type { TableOrder } from "@/lib/types";
+import type { RestaurantTheme, TableOrder } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 /**
  * Carrinho (revisão) e confirmação do pedido — Etapa 6.
@@ -32,11 +34,15 @@ export function CartSheet({
   open,
   onClose,
   onSent,
+  theme = DEFAULT_THEME,
 }: {
   open: boolean;
   onClose: () => void;
   onSent: (order: TableOrder) => void;
+  /** Tema do restaurante — o carrinho é a última tela antes do envio. */
+  theme?: RestaurantTheme;
 }) {
+  const tokens = themeTokens(theme);
   const {
     items,
     subtotal,
@@ -133,19 +139,20 @@ export function CartSheet({
         step === "cart" ? (
           <div className="space-y-2">
             <div className="flex items-baseline justify-between px-1 text-sm">
-              <span className="text-ink-500">Total estimado</span>
-              <span className="text-lg font-bold tabular-nums text-ink-900">
+              <span className="text-[var(--mv-text-muted)]">Total estimado</span>
+              <span className="text-lg font-bold tabular-nums text-[var(--mv-text)]">
                 {formatPrice(subtotal)}
               </span>
             </div>
-            <Button
-              size="lg"
-              block
+            <button
+              type="button"
               disabled={!canOrder || count === 0}
               onClick={() => setStep("confirm")}
+              className={cn(primaryButtonBase, "w-full min-h-[3.25rem] text-base")}
+              style={primaryButtonStyle(theme)}
             >
               Continuar
-            </Button>
+            </button>
           </div>
         ) : (
           <div className="space-y-2">
@@ -157,14 +164,20 @@ export function CartSheet({
                 {error}
               </p>
             )}
-            <Button size="lg" block onClick={send} loading={sending} disabled={!canOrder}>
+            <button
+              type="button"
+              onClick={send}
+              disabled={sending || !canOrder}
+              className={cn(primaryButtonBase, "w-full min-h-[3.25rem] text-base")}
+              style={primaryButtonStyle(theme)}
+            >
               {sending ? "Enviando…" : "Enviar pedido"}
-            </Button>
+            </button>
             <button
               type="button"
               onClick={() => setStep("cart")}
               disabled={sending}
-              className="tap-target flex w-full items-center justify-center gap-1.5 rounded-xl text-sm font-semibold text-ink-600 disabled:opacity-50"
+              className="tap-target flex w-full items-center justify-center gap-1.5 rounded-xl text-sm font-semibold text-[var(--mv-text-muted)] disabled:opacity-50"
             >
               <ArrowLeft className="size-4" aria-hidden="true" />
               Voltar ao carrinho
@@ -175,28 +188,32 @@ export function CartSheet({
     >
       {/* Sem mesa (link do cardápio, não QR/NFC): pedir não é possível. */}
       {!canOrder ? (
-        <div className="rounded-2xl border border-dashed border-ink-300 bg-ink-50 px-5 py-8 text-center">
-          <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-white text-2xl shadow-sm">
+        <div className="rounded-2xl border border-dashed border-[var(--mv-border)] bg-[var(--mv-surface-muted)] px-5 py-8 text-center">
+          <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-[var(--mv-surface)] text-2xl shadow-sm">
             🪑
           </span>
-          <p className="mt-3 text-sm font-semibold text-ink-800">Escaneie o QR Code da mesa</p>
-          <p className="mx-auto mt-1 max-w-xs text-sm text-ink-500">
+          <p className="mt-3 text-sm font-semibold text-[var(--mv-text)]">Escaneie o QR Code da mesa</p>
+          <p className="mx-auto mt-1 max-w-xs text-sm text-[var(--mv-text-muted)]">
             Para enviar um pedido, abra o cardápio pelo QR Code ou pela TAG NFC que está na sua
             mesa. Aí sabemos para onde levar o pedido.
           </p>
         </div>
       ) : count === 0 ? (
-        <div className="rounded-2xl border border-dashed border-ink-300 bg-ink-50 px-5 py-8 text-center">
-          <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-white text-ink-400 shadow-sm">
+        <div className="rounded-2xl border border-dashed border-[var(--mv-border)] bg-[var(--mv-surface-muted)] px-5 py-8 text-center">
+          <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-[var(--mv-surface)] text-[var(--mv-text-muted)] shadow-sm">
             <ReceiptText className="size-6" aria-hidden="true" />
           </span>
-          <p className="mt-3 text-sm font-semibold text-ink-800">Seu carrinho está vazio</p>
-          <p className="mx-auto mt-1 max-w-xs text-sm text-ink-500">
+          <p className="mt-3 text-sm font-semibold text-[var(--mv-text)]">Seu carrinho está vazio</p>
+          <p className="mx-auto mt-1 max-w-xs text-sm text-[var(--mv-text-muted)]">
             Toque em um item do cardápio para adicionar ao pedido.
           </p>
-          <Button variant="secondary" size="md" className="mt-4" onClick={onClose}>
+          <button
+            type="button"
+            className="mt-4 inline-flex min-h-12 items-center justify-center rounded-xl border border-[var(--mv-border)] bg-[var(--mv-surface)] px-4 text-sm font-semibold text-[var(--mv-text)]"
+            onClick={onClose}
+          >
             Ver o cardápio
-          </Button>
+          </button>
         </div>
       ) : step === "cart" ? (
         /* ------------------------------------------------- carrinho */
@@ -205,14 +222,14 @@ export function CartSheet({
             {lines.map((item) => (
               <li
                 key={item.product_id}
-                className="rounded-2xl border border-ink-200/70 bg-white p-3"
+                className="rounded-2xl border border-[var(--mv-border)] bg-[var(--mv-surface)] p-3"
               >
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[0.95rem] font-semibold leading-snug text-ink-900">
+                    <p className="text-[0.95rem] font-semibold leading-snug text-[var(--mv-text)]">
                       {item.name}
                     </p>
-                    <p className="mt-0.5 text-xs tabular-nums text-ink-500">
+                    <p className="mt-0.5 text-xs tabular-nums text-[var(--mv-text-muted)]">
                       {formatPrice(item.unit_price)} cada
                     </p>
                   </div>
@@ -220,24 +237,24 @@ export function CartSheet({
                     type="button"
                     onClick={() => removeItem(item.product_id)}
                     aria-label={`Remover ${item.name}`}
-                    className="grid size-10 shrink-0 place-items-center rounded-xl text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                    className="grid size-10 shrink-0 place-items-center rounded-xl text-[var(--mv-text-muted)] transition-colors hover:bg-red-50 hover:text-red-600"
                   >
                     <Trash2 className="size-4.5" aria-hidden="true" />
                   </button>
                 </div>
 
                 <div className="mt-2 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-1 rounded-xl bg-ink-50 p-1">
+                  <div className="flex items-center gap-1 rounded-xl bg-[var(--mv-surface-muted)] p-1">
                     <button
                       type="button"
                       onClick={() => setQuantity(item.product_id, item.quantity - 1)}
                       aria-label={`Diminuir ${item.name}`}
-                      className="grid size-10 place-items-center rounded-lg bg-white text-ink-700 shadow-sm active:scale-95"
+                      className="grid size-10 place-items-center rounded-lg bg-[var(--mv-surface)] text-[var(--mv-text)] shadow-sm active:scale-95"
                     >
                       <Minus className="size-4" aria-hidden="true" strokeWidth={2.5} />
                     </button>
                     <span
-                      className="w-8 text-center text-sm font-semibold tabular-nums text-ink-900"
+                      className="w-8 text-center text-sm font-semibold tabular-nums text-[var(--mv-text)]"
                       aria-label={`${item.quantity} de ${item.name}`}
                     >
                       {item.quantity}
@@ -247,13 +264,13 @@ export function CartSheet({
                       onClick={() => setQuantity(item.product_id, item.quantity + 1)}
                       disabled={item.quantity >= CART_MAX_QUANTITY}
                       aria-label={`Aumentar ${item.name}`}
-                      className="grid size-10 place-items-center rounded-lg bg-white text-ink-700 shadow-sm disabled:opacity-40 active:scale-95"
+                      className="grid size-10 place-items-center rounded-lg bg-[var(--mv-surface)] text-[var(--mv-text)] shadow-sm disabled:opacity-40 active:scale-95"
                     >
                       <Plus className="size-4" aria-hidden="true" strokeWidth={2.5} />
                     </button>
                   </div>
 
-                  <span className="text-[0.95rem] font-semibold tabular-nums text-ink-900">
+                  <span className="text-[0.95rem] font-semibold tabular-nums text-[var(--mv-text)]">
                     {formatPrice(lineTotal(item))}
                   </span>
                 </div>
@@ -263,18 +280,18 @@ export function CartSheet({
 
           {/* Resumo de valores. "Taxas" já aparece zerada: o espaço existe, a
               regra de taxa (garçom/entrega) é de outra etapa. */}
-          <dl className="space-y-1.5 rounded-2xl bg-ink-50 px-4 py-3 text-sm">
+          <dl className="space-y-1.5 rounded-2xl bg-[var(--mv-surface-muted)] px-4 py-3 text-sm">
             <div className="flex items-baseline justify-between">
-              <dt className="text-ink-600">Subtotal</dt>
-              <dd className="font-medium tabular-nums text-ink-900">{formatPrice(subtotal)}</dd>
+              <dt className="text-[var(--mv-text-muted)]">Subtotal</dt>
+              <dd className="font-medium tabular-nums text-[var(--mv-text)]">{formatPrice(subtotal)}</dd>
             </div>
             <div className="flex items-baseline justify-between">
-              <dt className="text-ink-600">Taxas</dt>
-              <dd className="tabular-nums text-ink-400">{formatPrice(0)}</dd>
+              <dt className="text-[var(--mv-text-muted)]">Taxas</dt>
+              <dd className="tabular-nums text-[var(--mv-text-muted)]">{formatPrice(0)}</dd>
             </div>
-            <div className="flex items-baseline justify-between border-t border-ink-200 pt-1.5">
-              <dt className="font-semibold text-ink-800">Total</dt>
-              <dd className="text-base font-bold tabular-nums text-ink-900">
+            <div className="flex items-baseline justify-between border-t border-[var(--mv-border)] pt-1.5">
+              <dt className="font-semibold text-[var(--mv-text)]">Total</dt>
+              <dd className="text-base font-bold tabular-nums text-[var(--mv-text)]">
                 {formatPrice(subtotal)}
               </dd>
             </div>
@@ -283,27 +300,27 @@ export function CartSheet({
       ) : (
         /* ------------------------------------------------ confirmação */
         <div className="space-y-4">
-          <div className="rounded-2xl border border-brand-200 bg-brand-50/70 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
+          <div className="rounded-2xl border border-[var(--mv-primary)]/30 bg-[var(--mv-primary-soft)] px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--mv-primary)]">
               Pedido para
             </p>
-            <p className="text-lg font-bold text-brand-900">{tableName}</p>
+            <p className="text-lg font-bold text-[var(--mv-text)]">{tableName}</p>
           </div>
 
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-400">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--mv-text-muted)]">
               Itens ({count})
             </h3>
-            <ul className="mt-2 divide-y divide-ink-100 rounded-2xl border border-ink-200/70 bg-white px-4">
+            <ul className="mt-2 divide-y divide-[var(--mv-border)] rounded-2xl border border-[var(--mv-border)] bg-[var(--mv-surface)] px-4">
               {lines.map((item) => (
                 <li key={item.product_id} className="flex items-baseline gap-2 py-2.5">
-                  <span className="shrink-0 text-sm font-bold tabular-nums text-brand-700">
+                  <span className="shrink-0 text-sm font-bold tabular-nums text-[var(--mv-primary)]">
                     {item.quantity}x
                   </span>
-                  <span className="min-w-0 flex-1 text-sm font-medium text-ink-900">
+                  <span className="min-w-0 flex-1 text-sm font-medium text-[var(--mv-text)]">
                     {item.name}
                   </span>
-                  <span className="shrink-0 text-sm tabular-nums text-ink-600">
+                  <span className="shrink-0 text-sm tabular-nums text-[var(--mv-text-muted)]">
                     {formatPrice(lineTotal(item))}
                   </span>
                 </li>
@@ -314,7 +331,7 @@ export function CartSheet({
           <div>
             <label
               htmlFor="order-notes"
-              className="flex items-baseline justify-between text-xs font-semibold uppercase tracking-wide text-ink-400"
+              className="flex items-baseline justify-between text-xs font-semibold uppercase tracking-wide text-[var(--mv-text-muted)]"
             >
               <span>Observações do pedido</span>
               <span
@@ -331,21 +348,24 @@ export function CartSheet({
               maxLength={ORDER_NOTES_MAX}
               rows={2}
               placeholder="Ex.: sem cebola, ponto da carne bem passado"
-              className="mt-1.5 w-full resize-none rounded-2xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100"
+              className="mt-1.5 w-full resize-none rounded-2xl border border-[var(--mv-border)] bg-[var(--mv-surface)] px-3.5 py-2.5 text-sm text-[var(--mv-text)] placeholder:text-[var(--mv-text-muted)] focus:border-[var(--mv-primary)] focus:outline-none focus:ring-4 focus:ring-[var(--mv-primary-soft)]"
             />
           </div>
 
-          <div className="flex items-baseline justify-between rounded-2xl bg-ink-900 px-4 py-3 text-white">
+          <div
+            className="flex items-baseline justify-between rounded-2xl px-4 py-3"
+            style={{ backgroundColor: tokens.button, color: tokens.buttonText }}
+          >
             <span className="text-sm text-white/80">Total</span>
             <span className="text-xl font-bold tabular-nums">{formatPrice(subtotal)}</span>
           </div>
 
-          <p className="text-center text-xs leading-snug text-ink-400">
+          <p className="text-center text-xs leading-snug text-[var(--mv-text-muted)]">
             O preço final é confirmado pela cozinha ao aceitar o pedido.
           </p>
 
           {sending && (
-            <p className="flex items-center justify-center gap-2 text-xs text-ink-400" role="status">
+            <p className="flex items-center justify-center gap-2 text-xs text-[var(--mv-text-muted)]" role="status">
               <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
               Enviando para a cozinha…
             </p>

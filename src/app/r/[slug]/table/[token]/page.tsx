@@ -3,7 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import { PublicHeader } from "@/components/public/public-header";
 import { PublicMenuView } from "@/components/public/public-menu";
 import { TableBadge } from "@/components/public/table-badge";
+import { ThemeScope } from "@/components/public/themed";
 import { getPublicMenu, getPublicRestaurant } from "@/lib/data/public-menu";
+import { getPublicRestaurantTheme } from "@/lib/data/theme";
 import { resolveTableToken } from "@/lib/data/tables";
 import { getRestaurantTimezone } from "@/lib/data/timezone";
 import type { PublicRestaurant } from "@/lib/types";
@@ -53,18 +55,20 @@ export default async function TableMenuPage({ params }: { params: Promise<Params
     redirect(`/r/${restaurant.slug}`);
   }
 
-  const [menu, timeZone] = await Promise.all([
+  const [menu, timeZone, theme] = await Promise.all([
     getPublicMenu(restaurant.id),
     getRestaurantTimezone(restaurant.id),
+    getPublicRestaurantTheme(restaurant.id),
   ]);
 
   return (
-    <div className="min-h-dvh bg-ink-50">
+    <ThemeScope theme={theme} className="min-h-dvh">
       <PublicHeader
         restaurant={restaurant}
         menu={menu}
         timeZone={timeZone}
         tableName={context.table_name}
+        theme={theme}
       />
 
       {/*
@@ -76,15 +80,18 @@ export default async function TableMenuPage({ params }: { params: Promise<Params
         menu={menu}
         tableName={context.table_name}
         tableToken={token}
+        theme={theme}
       />
 
-      <footer className="border-t border-ink-200/70 bg-white pb-safe">
+      <footer className="border-t border-[var(--mv-border)] bg-[var(--mv-surface)] pb-safe">
         <div className="mx-auto w-full max-w-lg px-4 py-5 text-center">
           <TableBadge name={context.table_name} />
-          <p className="mt-3 text-xs text-ink-400">{restaurant.name} · cardápio digital</p>
+          <p className="mt-3 text-xs text-[var(--mv-text-muted)]">
+            {restaurant.name} · cardápio digital
+          </p>
         </div>
       </footer>
-    </div>
+    </ThemeScope>
   );
 }
 
