@@ -61,7 +61,13 @@ export async function listMyRestaurants(): Promise<ActiveRestaurant[]> {
   }));
 }
 
-/** Primeiro restaurante ativo do usuário — base do painel nesta etapa. */
+/**
+ * Primeiro restaurante do usuário — base do painel.
+ *
+ * Devolve também restaurantes suspensos (Etapa 10): é o layout do painel que
+ * decide mostrar a tela de bloqueio com o motivo. Filtrar aqui esconderia a
+ * casa e o dono veria um "restaurante não encontrado", que parece bug.
+ */
 export async function getActiveRestaurant(): Promise<ActiveRestaurant | null> {
   const restaurants = await listMyRestaurants();
   return restaurants[0] ?? null;

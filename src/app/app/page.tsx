@@ -11,6 +11,7 @@ import {
   LayoutGrid,
   Package,
   Palette,
+  ShieldCheck,
   Plus,
   Store,
   UtensilsCrossed,
@@ -28,6 +29,7 @@ import {
   getSessionUser,
 } from "@/lib/data/restaurants";
 import { getOrderBoardCounts } from "@/lib/data/orders-panel";
+import { isPlatformAdmin } from "@/lib/data/admin";
 import { tableRequestCounts } from "@/lib/data/table-requests";
 import { RESTAURANT_ROLE_LABEL } from "@/lib/types";
 import { firstName } from "@/lib/utils";
@@ -72,16 +74,31 @@ export default async function DashboardPage() {
   const restaurant = await getActiveRestaurant();
   if (!restaurant) redirect("/onboarding");
 
-  const [profile, counters, orderCounts, requestCounts] = await Promise.all([
+  const [profile, counters, orderCounts, requestCounts, isAdmin] = await Promise.all([
     getProfile(user.id),
     getRestaurantCounters(restaurant.id),
     // Etapa 7: os três números do salão, numa RPC só.
     getOrderBoardCounts(restaurant.id),
     // Etapa 8: gente esperando atenção na mesa.
     tableRequestCounts(restaurant.id),
+    // Etapa 10: atalho para o painel master, quando o usuário tem o papel.
+    isPlatformAdmin(),
   ]);
 
   const awaitingAttention = requestCounts.pending + requestCounts.acknowledged;
+
+  const actions = isAdmin
+    ? [
+        ...quickActions,
+        {
+          href: "/admin",
+          label: "Painel da plataforma",
+          description: "Todas as casas e usuários",
+          icon: ShieldCheck,
+          primary: false,
+        },
+      ]
+    : quickActions;
 
   const greetingName = firstName(profile?.full_name) || "chef";
   const hasMenu = counters.categories > 0 || counters.products > 0;
@@ -228,7 +245,7 @@ export default async function DashboardPage() {
             }
           />
           <ul className="stagger space-y-2.5">
-            {quickActions.map((action) => {
+            {actions.map((action) => {
               const Icon = action.icon;
               return (
                 <li key={action.href}>

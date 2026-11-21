@@ -27,6 +27,13 @@ const ROUTES = [
   // Etapa 9: editor de personalização do cardápio (mesma regra de sessão)
   "/app/configuracoes",
   "/app/configuracoes/personalizacao",
+  // Etapa 10: painel master (exige sessão + papel de plataforma)
+  "/admin",
+  "/admin/restaurantes",
+  "/admin/usuarios",
+  "/admin/pedidos",
+  "/admin/auditoria",
+  "/admin/configuracoes",
 ];
 const MAX_WIDTH = 430;
 

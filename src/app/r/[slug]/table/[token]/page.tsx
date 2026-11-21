@@ -5,6 +5,8 @@ import { PublicMenuView } from "@/components/public/public-menu";
 import { TableBadge } from "@/components/public/table-badge";
 import { ThemeScope } from "@/components/public/themed";
 import { getPublicMenu, getPublicRestaurant } from "@/lib/data/public-menu";
+import { getPublicRestaurantState } from "@/lib/data/public-menu";
+import { MenuUnavailable } from "@/components/public/menu-unavailable";
 import { getPublicRestaurantTheme } from "@/lib/data/theme";
 import { resolveTableToken } from "@/lib/data/tables";
 import { getRestaurantTimezone } from "@/lib/data/timezone";
@@ -44,7 +46,14 @@ export default async function TableMenuPage({ params }: { params: Promise<Params
   if (!context) {
     // Slug existe mas a mesa não resolve: restaurante fechado/pausado ou mesa
     // desativada. Mostramos o motivo em vez de um 404 seco.
-    if (restaurant) return <UnavailablePage restaurant={restaurant} />;
+    if (restaurant) return <MenuUnavailable reason="table" restaurantName={restaurant.name} />;
+
+    // Etapa 10: o slug pode existir e estar suspenso. Nesse caso a mensagem é
+    // outra — o cliente não está numa mesa inválida, a casa está bloqueada.
+    const state = await getPublicRestaurantState(slug);
+    if (state === "suspended") {
+      return <MenuUnavailable reason="suspended" />;
+    }
     notFound();
   }
 
@@ -92,34 +101,5 @@ export default async function TableMenuPage({ params }: { params: Promise<Params
         </div>
       </footer>
     </ThemeScope>
-  );
-}
-
-/**
- * Mesa desativada ou restaurante fora do ar.
- *
- * O cliente acabou de apontar a câmera para um QR na mesa; ele precisa saber o
- * que fazer, não ver um 404 seco. A mensagem não distingue "mesa desativada"
- * de "token inválido" — não vale entregar pistas.
- */
-function UnavailablePage({ restaurant }: { restaurant: PublicRestaurant }) {
-  return (
-    <main className="grid min-h-dvh place-items-center bg-ink-50 px-5 py-10">
-      <div className="w-full max-w-sm rounded-[var(--radius-card)] border border-ink-200 bg-white p-6 text-center">
-        <span
-          className="mx-auto grid size-12 place-items-center rounded-2xl bg-amber-50 text-xl"
-          aria-hidden="true"
-        >
-          🪑
-        </span>
-        <h1 className="mt-3 text-lg font-semibold text-ink-900">
-          Esta mesa não está disponível
-        </h1>
-        <p className="mt-1.5 text-sm leading-relaxed text-ink-500">
-          O cardápio de <strong>{restaurant.name}</strong> está fechado no momento ou
-          esta mesa foi desativada. Chame um atendente — ele resolve rapidinho.
-        </p>
-      </div>
-    </main>
   );
 }

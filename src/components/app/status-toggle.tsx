@@ -7,11 +7,12 @@ import { Badge } from "@/components/ui/card";
 import { RESTAURANT_STATUS_LABEL, type RestaurantStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const tone: Record<RestaurantStatus, "success" | "warning" | "muted"> = {
+const tone: Record<RestaurantStatus, "success" | "warning" | "muted" | "danger"> = {
   published: "success",
   draft: "warning",
   paused: "muted",
   closed: "muted",
+  suspended: "danger",
 };
 
 /**
@@ -21,6 +22,10 @@ const tone: Record<RestaurantStatus, "success" | "warning" | "muted"> = {
 export function StatusToggle({ status }: { status: RestaurantStatus }) {
   const [pending, startTransition] = useTransition();
   const isPublished = status === "published";
+  // Suspenso: a decisão não é do restaurante. O banco recusaria a escrita
+  // (trigger `guard_restaurant_admin_fields`), então nem oferecemos o botão —
+  // um controle que sempre falha é pior do que nenhum controle.
+  const isSuspended = status === "suspended";
 
   const toggle = () => {
     startTransition(async () => {
@@ -47,10 +52,18 @@ export function StatusToggle({ status }: { status: RestaurantStatus }) {
             {RESTAURANT_STATUS_LABEL[status]}
           </p>
           <p className="text-xs text-ink-500">
-            {isPublished ? "Visível para seus clientes" : "Ainda não visível ao público"}
+            {isSuspended
+              ? "Fale com o suporte para reativar"
+              : isPublished
+                ? "Visível para seus clientes"
+                : "Ainda não visível ao público"}
           </p>
         </div>
       </div>
+
+      {isSuspended ? (
+        <Badge tone="danger">Suspenso</Badge>
+      ) : (
 
       <button
         type="button"
@@ -83,6 +96,7 @@ export function StatusToggle({ status }: { status: RestaurantStatus }) {
           </span>
         </span>
       </button>
+      )}
     </div>
   );
 }

@@ -1,7 +1,5 @@
 /** Tipos de domínio da Etapa 1. Espelham o schema em supabase/migrations. */
 
-export type RestaurantStatus = "draft" | "published" | "paused" | "closed";
-export type RestaurantRole = "owner" | "admin" | "staff";
 export type MemberStatus = "active" | "invited" | "suspended";
 
 export type UserProfile = {
@@ -31,6 +29,17 @@ export type Restaurant = {
   timezone: string;
   currency: string;
   settings: Record<string, unknown>;
+  /**
+   * Plano e assinatura (Etapa 10). Modelo pronto, cobrança na Etapa 11: por
+   * isso `subscription_status` nasce `none` em toda casa que já existe.
+   */
+  plan_id?: string | null;
+  subscription_status?: SubscriptionStatus;
+  subscription_start?: string | null;
+  subscription_end?: string | null;
+  /** Preenchidos só quando a plataforma suspende. */
+  suspended_at?: string | null;
+  suspended_reason?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -46,19 +55,6 @@ export type RestaurantMembership = {
 
 /** Restaurante + papel do usuário logado (contexto de sessão). */
 export type ActiveRestaurant = Restaurant & { role: RestaurantRole };
-
-export const RESTAURANT_STATUS_LABEL: Record<RestaurantStatus, string> = {
-  draft: "Rascunho",
-  published: "Publicado",
-  paused: "Pausado",
-  closed: "Fechado",
-};
-
-export const RESTAURANT_ROLE_LABEL: Record<RestaurantRole, string> = {
-  owner: "Proprietário",
-  admin: "Administrador",
-  staff: "Equipe",
-};
 
 /* ==========================================================================
    Etapa 2 · Categorias e produtos
@@ -633,4 +629,234 @@ export type ThemeImageKind = "logo" | "cover";
 export const THEME_IMAGE_LABEL: Record<ThemeImageKind, string> = {
   logo: "Logo",
   cover: "Capa",
+};
+
+/* ==========================================================================
+   Etapa 10 · Painel master do administrador da plataforma
+   ========================================================================== */
+
+/**
+ * Papel do usuário **dentro de um restaurante**.
+ *
+ * `manager` (Etapa 10) é o gerente: opera cardápio, mesas, pedidos e tema,
+ * mas não gerencia a equipe — no banco isso é `is_restaurant_admin` para o
+ * operacional e `is_restaurant_owner_admin` para a equipe.
+ */
+export type RestaurantRole = "owner" | "admin" | "manager" | "staff";
+
+export const RESTAURANT_ROLE_LABEL: Record<RestaurantRole, string> = {
+  owner: "Proprietário",
+  admin: "Administrador",
+  manager: "Gerente",
+  staff: "Equipe",
+};
+
+/** Papel de quem enxerga a plataforma inteira (tabela `platform_admins`). */
+export type PlatformRole = "owner" | "admin";
+
+export const PLATFORM_ROLE_LABEL: Record<PlatformRole, string> = {
+  owner: "Dono da plataforma",
+  admin: "Administrador da plataforma",
+};
+
+/**
+ * Status do restaurante, do ponto de vista de quem opera.
+ *
+ * Note a diferença de dono do dado:
+ *   - `draft`, `published`, `paused`, `closed` → o **restaurante** decide;
+ *   - `suspended`                        → só a **plataforma** decide.
+ *
+ * Por isso o trigger `guard_restaurant_admin_fields` recusa `suspended` vindo
+ * de quem não é admin global, inclusive na saída da suspensão.
+ */
+export type RestaurantStatus = "draft" | "published" | "paused" | "closed" | "suspended";
+
+export const RESTAURANT_STATUS_LABEL: Record<RestaurantStatus, string> = {
+  draft: "Rascunho",
+  published: "Ativo",
+  paused: "Pausado",
+  closed: "Fechado",
+  suspended: "Suspenso",
+};
+
+/** Como cada status aparece no painel master. */
+export type AdminStatusTone = "success" | "warning" | "neutral" | "danger";
+
+export const RESTAURANT_STATUS_TONE: Record<RestaurantStatus, AdminStatusTone> = {
+  published: "success",
+  draft: "warning",
+  paused: "neutral",
+  closed: "neutral",
+  suspended: "danger",
+};
+
+/** Rótulos do filtro de status do painel (item 3 e 6 do escopo). */
+export const ADMIN_STATUS_FILTERS = [
+  { id: "all", label: "Todos" },
+  { id: "published", label: "Ativos" },
+  { id: "paused", label: "Inativos" },
+  { id: "suspended", label: "Suspensos" },
+  { id: "draft", label: "Rascunhos" },
+] as const;
+
+export type AdminStatusFilter = (typeof ADMIN_STATUS_FILTERS)[number]["id"];
+
+/** Contadores globais do dashboard (`admin_dashboard`). */
+export type AdminDashboard = {
+  restaurants_total: number;
+  restaurants_active: number;
+  restaurants_inactive: number;
+  restaurants_suspended: number;
+  products_total: number;
+  tables_total: number;
+  orders_total: number;
+  orders_today: number;
+  users_total: number;
+};
+
+/**
+ * Linha da lista de restaurantes.
+ *
+ * O responsável (`owner_*`) vem do primeiro owner ativo: casas sem owner, que
+ * só existem após exclusão de conta, aparecem com `null` em vez de sumirem da
+ * lista — o suporte precisa vê-las justamente para corrigir isso.
+ */
+export type AdminRestaurantRow = {
+  id: string;
+  name: string;
+  slug: string;
+  status: RestaurantStatus;
+  phone: string | null;
+  created_at: string;
+  products_count: number;
+  tables_count: number;
+  members_count: number;
+  orders_count: number;
+  owner_name: string | null;
+  owner_email: string | null;
+  plan_id: string | null;
+  subscription_status: SubscriptionStatus;
+  suspended_reason: string | null;
+};
+
+/** Status de assinatura — modelo pronto, cobrança na Etapa 11. */
+export type SubscriptionStatus = "none" | "trialing" | "active" | "past_due" | "canceled";
+
+export const SUBSCRIPTION_STATUS_LABEL: Record<SubscriptionStatus, string> = {
+  none: "Sem assinatura",
+  trialing: "Em teste",
+  active: "Ativa",
+  past_due: "Pagamento atrasado",
+  canceled: "Cancelada",
+};
+
+export type Plan = {
+  id: string;
+  name: string;
+  description: string | null;
+  price_monthly: number;
+  features: string[];
+  is_active: boolean;
+  position: number;
+};
+
+export type AdminRestaurantMember = {
+  user_id: string;
+  email: string | null;
+  full_name: string | null;
+  role: RestaurantRole;
+  status: MemberStatus;
+  created_at: string;
+};
+
+export type AdminRestaurantProduct = {
+  id: string;
+  name: string;
+  price: number;
+  is_available: boolean;
+  category_name: string | null;
+};
+
+export type AdminRestaurantCategory = {
+  id: string;
+  name: string;
+  is_active: boolean;
+  products_count: number;
+};
+
+export type AdminRestaurantTable = {
+  id: string;
+  name: string;
+  is_active: boolean;
+  public_token: string;
+};
+
+export type AdminRestaurantOrder = {
+  id: string;
+  order_number: number;
+  status: OrderStatus;
+  total: number;
+  created_at: string;
+  table_name: string | null;
+};
+
+/** Detalhe de suporte (`admin_restaurant_detail`) — sete blocos de uma vez. */
+export type AdminRestaurantDetail = {
+  restaurant: Restaurant;
+  counts: {
+    products: number;
+    categories: number;
+    tables: number;
+    orders: number;
+    orders_today: number;
+    members: number;
+  };
+  members: AdminRestaurantMember[];
+  products: AdminRestaurantProduct[];
+  categories: AdminRestaurantCategory[];
+  tables: AdminRestaurantTable[];
+  orders: AdminRestaurantOrder[];
+  theme: (Omit<RestaurantTheme, "preset"> & { preset: ThemePresetId | null; updated_at: string }) | null;
+};
+
+/** Linha de `admin_list_users`. Um usuário pode ter vários restaurantes. */
+export type AdminUserRow = {
+  user_id: string;
+  email: string | null;
+  full_name: string | null;
+  phone: string | null;
+  created_at: string;
+  is_platform_admin: boolean;
+  platform_role: PlatformRole | null;
+  restaurants: Array<{
+    restaurant_id: string;
+    name: string;
+    slug: string;
+    role: RestaurantRole;
+    status: MemberStatus;
+  }>;
+};
+
+export type AdminOrderRow = {
+  id: string;
+  restaurant_id: string;
+  restaurant_name: string;
+  table_name: string | null;
+  order_number: number;
+  status: OrderStatus;
+  total: number;
+  created_at: string;
+};
+
+/** Evento de auditoria administrativa. */
+export type AdminAuditRow = {
+  id: string;
+  actor_email: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  restaurant_id: string | null;
+  restaurant_name: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 };

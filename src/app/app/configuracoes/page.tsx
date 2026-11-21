@@ -7,6 +7,7 @@ import {
   LifeBuoy,
   LogOut,
   Palette,
+  ShieldCheck,
   Store,
   UserRound,
   type LucideIcon,
@@ -15,6 +16,7 @@ import { AppHeader } from "@/components/app/app-header";
 import { Badge, Card, SectionTitle } from "@/components/ui/card";
 import { signOut } from "@/actions/auth";
 import { getActiveRestaurant, getProfile, getSessionUser } from "@/lib/data/restaurants";
+import { isPlatformAdmin } from "@/lib/data/admin";
 import { RESTAURANT_ROLE_LABEL } from "@/lib/types";
 import { initials } from "@/lib/utils";
 
@@ -59,7 +61,7 @@ const groups: { title: string; items: Item[] }[] = [
         label: "Plano e assinatura",
         description: "Compare planos e gerencie a cobrança",
         icon: CreditCard,
-        badge: "Etapa 9",
+        badge: "Etapa 11",
       },
       {
         label: "Ajuda e suporte",
@@ -75,10 +77,34 @@ export default async function SettingsPage() {
   const user = await getSessionUser();
   if (!user) redirect("/entrar?next=/app/configuracoes");
 
-  const [profile, restaurant] = await Promise.all([
+  const [profile, restaurant, isAdmin] = await Promise.all([
     getProfile(user.id),
     getActiveRestaurant(),
+    isPlatformAdmin(),
   ]);
+
+  /**
+   * Quem também é administrador da plataforma ganha o atalho para o /admin.
+   * O link só existe para quem tem o papel — mas isso é conveniência, não
+   * controle: mesmo que a URL seja digitada por outro usuário, o layout do
+   * /admin e as RPCs recusam.
+   */
+  const groupsWithAdmin = isAdmin
+    ? [
+        ...groups,
+        {
+          title: "Plataforma",
+          items: [
+            {
+              href: "/admin",
+              label: "Painel da plataforma",
+              description: "Restaurantes, usuários, pedidos e auditoria",
+              icon: ShieldCheck,
+            },
+          ],
+        },
+      ]
+    : groups;
 
   return (
     <>
@@ -101,7 +127,7 @@ export default async function SettingsPage() {
           )}
         </Card>
 
-        {groups.map((group) => (
+        {groupsWithAdmin.map((group) => (
           <section key={group.title} aria-labelledby={`grupo-${group.title}`}>
             <h2
               id={`grupo-${group.title}`}
@@ -172,7 +198,7 @@ export default async function SettingsPage() {
         </form>
 
         <p className="pb-2 text-center text-xs text-ink-400">
-          Menuvo · versão 0.9.0 (Etapa 9)
+          Menuvo · versão 0.10.0 (Etapa 10)
         </p>
       </main>
     </>

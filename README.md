@@ -20,7 +20,13 @@ detalhe do produto em tela cheia com quantidade. Nada de tela administrativa.
 Code e TAG NFC; o cliente monta o carrinho e pede; a equipe acompanha tudo em
 `/app/pedidos` sem recarregar.
 
-**Etapa 9 — personalização visual (atual).** Cada restaurante define logo, capa,
+**Etapa 10 — painel master (atual).** Existem dois tipos de usuário e o banco
+sabe disso: o **dono do restaurante**, que vê só a própria casa, e o
+**administrador da plataforma**, que entra em `/admin`, ativa, suspende e audita
+todas elas. Nenhum pode fazer o trabalho do outro — nem pela interface, nem por
+API.
+
+**Etapa 9 — personalização visual.** Cada restaurante define logo, capa,
 cinco cores, estilo de card e de botão, com seis temas prontos e preview de
 celular ao vivo. O cardápio público aplica o tema automaticamente — e cai num
 tema padrão profissional quando não há personalização.
@@ -513,6 +519,80 @@ UI em jsdom e 18 de renderização SSR do cardápio.
 
 ---
 
+### Painel master do administrador da plataforma (Etapa 10)
+
+Existem dois tipos de usuário, e o banco sabe disso: **quem pertence a um
+restaurante** (`restaurant_users`) e **quem administra a plataforma**
+(`platform_admins`). O segundo entra em `/admin` e enxerga todas as casas.
+
+| Objeto | Papel |
+| --- | --- |
+| `public.platform_admins` | quem tem acesso global — tabela própria, não um papel de restaurante |
+| `public.is_platform_admin()` | guarda de toda leitura e escrita do painel |
+| `public.admin_dashboard()` | nove contadores globais em uma linha |
+| `public.admin_list_restaurants(search, status)` | lista com busca por nome, slug, telefone e responsável |
+| `public.admin_restaurant_detail(id)` | as sete seções da casa em um `jsonb` |
+| `public.admin_set_restaurant_status(...)` | ativa, desativa e suspende (com motivo obrigatório) |
+| `public.admin_audit_log` | histórico append-only de ações administrativas |
+
+- **Ser admin da plataforma não é um papel de restaurante.** Se `admin` fosse
+  mais um valor em `restaurant_member_role`, um dono que criasse o próprio
+  vínculo com esse papel ganharia poder global. Por isso a autorização mora em
+  tabela separada, e `is_platform_admin()` nunca olha para `restaurant_users`.
+- **Nenhuma policy nova abre as tabelas para o admin global.** A leitura do
+  painel passa por funções `security definer` que devolvem listas já recortadas
+  e repetem `is_platform_admin()` a cada chamada. RLS continua fechada por
+  tenant: o admin não "vira" membro de ninguém, ele consulta por um caminho
+  explícito e auditável. Um `select` copiado para outra tela não vira porta
+  aberta.
+- **Suspender é um cadeado, não um rótulo.** O dono pode `update` a própria
+  linha em `restaurants` (a policy permite), então um status `suspended` no enum
+  sozinho seria decorativo: bastaria ele mesmo gravar `published` de volta. O
+  trigger `guard_restaurant_admin_fields` fecha os dois sentidos — nem suspender
+  a si mesmo, nem sair da suspensão. Só a plataforma passa.
+- **Suspensão tem três superfícies, com textos diferentes.** O cardápio público
+  do cliente (`/r/...` e `/r/.../table/...`) diz que está fora do ar e manda
+  chamar um atendente; o painel do restaurante mostra uma tela com **o motivo
+  escrito pelo admin** e a informação de que nada foi apagado; a lista do
+  `/admin` mostra o motivo em vermelho. Nenhuma delas é um 404 seco, e a função
+  pública que revela o motivo (`public_restaurant_state`) devolve **só o
+  status** — nunca telefone, equipe ou configurações.
+- **Quatro papéis, com uma linha de diferença que importa.** `owner`, `admin`,
+  `manager` e `staff` já existem no banco. Gerente é admin **operacional**
+  (cardápio, mesas, pedidos, tema) e não mexe na equipe: isso é
+  `is_restaurant_owner_admin`, e as policies de `restaurant_users` passaram a
+  usá-la — senão um gerente poderia se promover a dono.
+- **Auditoria é append-only de verdade.** A tabela tem RLS com apenas `select`
+  para admin global: nenhuma policy de insert, update ou delete. Quem grava são
+  funções `security definer`, e o autor vem de `auth.uid()` dentro do banco — um
+  `actor_id` vindo do payload permitiria forjar autoria. Nem o próprio admin
+  reescreve o passado pelo cliente.
+- **Acesso de suporte deixa rastro antes de abrir.** O botão "Abrir cardápio
+  público" chama `logSupportAccess` e só abre a aba **depois** que o registro
+  volta com sucesso: se a auditoria falha, o acesso não acontece. É o que faz a
+  trilha valer alguma coisa.
+- **Último owner é protegido.** Rebaixar ou bloquear o único proprietário ativo
+  é recusado pelo banco (`last_owner`): uma casa sem dono fica órfã, e o suporte
+  não deveria conseguir fazer isso por acidente.
+- **Plano é modelo, não cobrança.** `plan_id`, `subscription_status`,
+  `subscription_start` e `subscription_end` já existem, com catálogo em
+  `plans`. Nada cobra nesta etapa; as colunas existem para a Etapa 11 não
+  precisar migrar dados com pressa. E o trigger impede o dono de trocar o
+  próprio plano.
+- **Mobile primeiro, cinco abas.** Início · Casas · Usuários · Pedidos · Ajustes,
+  com fundo escuro (sinal permanente de "você está na plataforma, não no seu
+  restaurante"), cards de toque largo, busca com acento normalizado e filtros
+  que mostram contagem. Os cards de "suspensos" e "inativos" do dashboard são
+  atalhos para a lista já filtrada — número sem ação não resolve nada.
+
+Verificação da etapa: **58 checagens SQL** no banco vivo (contadores, busca por
+nome/slug/telefone/e-mail, isolamento entre duas casas, RLS com role trocada,
+dono sem acesso ao painel, cadeado da suspensão nos dois sentidos, auditoria por
+trigger, último owner, slug duplicado e auditabilidade) e **145 checagens
+automatizadas** — 58 de lógica/segurança, 62 de UI em jsdom, 25 de SSR.
+
+---
+
 ## Rotas
 
 | Rota                                  | Descrição                                       |
@@ -538,10 +618,20 @@ UI em jsdom e 18 de renderização SSR do cardápio.
 | `/app/configuracoes/conta`            | Conta do usuário                                |
 | `/app/configuracoes/restaurante`      | Dados do restaurante                            |
 | `/app/configuracoes/personalizacao`   | **Personalizar cardápio** — cores e imagens (E9) |
+| `/admin`                              | **Painel master** — visão geral (Etapa 10)      |
+| `/admin/restaurantes`                 | Todas as casas: busca, filtro, status           |
+| `/admin/restaurantes/[id]`            | Detalhe de suporte (sete seções)                |
+| `/admin/restaurantes/[id]/editar`     | Edição de dados, link e plano                   |
+| `/admin/usuarios`                     | Usuários, papéis e vínculos                     |
+| `/admin/pedidos`                      | Pedidos recentes de toda a plataforma           |
+| `/admin/auditoria`                    | Histórico de ações administrativas              |
+| `/admin/configuracoes`                | Conta da plataforma e catálogo de planos        |
 
 Fluxo principal: **cadastro → login automático → criar restaurante → dashboard**.
-O middleware do Supabase renova a sessão e protege `/app`, `/onboarding` e
-`/configuracoes`.
+O middleware do Supabase renova a sessão e exige login em `/app`,
+`/onboarding`, `/configuracoes` e `/admin`. O **papel** de plataforma não é
+checado no middleware (ele roda em toda rota e não deve consultar o banco): quem
+decide é o layout do `/admin` e, de novo, cada RPC `security definer`.
 
 ---
 
@@ -559,7 +649,8 @@ src/
 │   ├── orders.ts       criação e releitura de pedidos (Etapa 6)
 │   ├── orders-panel.ts status, anotações e histórico (Etapa 7)
 │   ├── table-requests.ts fila de solicitações da mesa (Etapa 8)
-│   └── theme.ts        tema do cardápio: salvar, resetar, upload (Etapa 9)
+│   ├── theme.ts        tema do cardápio: salvar, resetar, upload (Etapa 9)
+│   └── admin.ts        painel master: status, cadastro, papéis (Etapa 10)
 ├── app/
 │   ├── layout.tsx      metadata, viewport, manifest
 │   ├── page.tsx        landing
@@ -584,6 +675,8 @@ src/
 │   ├── tables/         Painel de mesas: TablesManager, TableCard,
 │   │                   TableSheet, QrSheet, QrPrintCard,
 │   │                   NfcPanel, NfcSheet, NfcTagSheet, NfcStatusBadge
+│   ├── admin/          Painel master: AdminNav, RestaurantList,
+│   │                   MembersSection, RestaurantEditForm, MetricCard
 │   ├── theme/          Editor de personalização: ThemeEditor, MenuPreview,
 │   │                   ColorField, ImagePicker
 │   └── ui/             Button, Field, Card, Badge, Sheet, Switch,
@@ -618,6 +711,7 @@ supabase/migrations/    schema aplicado via Supabase
                         0008_order_panel.sql (Etapa 7)
                         0009_table_requests.sql (Etapa 8)
                         0010_restaurant_theme.sql (Etapa 9)
+                        0011_platform_admin.sql (Etapa 10)
 scripts/                auditoria de layout + teste de RLS
 ```
 
@@ -640,6 +734,13 @@ scripts/                auditoria de layout + teste de RLS
   valor. A mesa vem do token (nunca do corpo da requisição), a duplicata é
   barrada por índice único parcial e o cooldown vive no banco — a tela só
   reflete a decisão do servidor.
+- **Dois tipos de usuário, dois lugares no banco.** Poder de restaurante vive
+  em `restaurant_users`; poder de plataforma, em `platform_admins`. Misturar os
+  dois faria de "admin" um papel que qualquer dono poderia se dar. Todas as
+  consultas do `/admin` passam por RPC `security definer` guardada por
+  `is_platform_admin()` — a autorização não depende de a interface esconder o
+  botão, e o middleware checa sessão (não papel) para não consultar o banco em
+  toda requisição.
 - **Aparência é dado do restaurante, não código.** O cardápio lê variáveis
   `--mv-*` definidas por um `style` no topo da página; nenhum CSS é gerado por
   restaurante e nenhum rebuild acontece ao trocar de tema. O mesmo módulo que
@@ -678,12 +779,14 @@ scripts/                auditoria de layout + teste de RLS
 | ~~7~~ | ~~Painel de pedidos~~           | ~~`/app/pedidos` + tempo real — **concluída**~~     |
 | ~~8~~ | ~~Chamar garçom / pedir a conta~~ | ~~`table_requests` + barra do cardápio — **concluída**~~ |
 | ~~9~~ | ~~Personalização do cardápio~~  | ~~`restaurant_themes` + `/app/configuracoes/personalizacao` — **concluída**~~ |
-| 10    | Planos e assinaturas            | `plans`, `subscriptions`; gate por `restaurant_id`   |
-| 11    | Publicação e produção           | domínios, observabilidade, cache                    |
+| ~~10~~ | ~~Painel master do administrador~~ | ~~`platform_admins` + `/admin` — **concluída**~~ |
+| 11    | Planos e assinaturas            | `plans` já existe; falta cobrança e limites         |
+| 12    | Publicação e produção           | domínios, observabilidade, cache                    |
 
 Pontos já preparados: o bucket de storage existe, o tema já é uma tabela por
 tenant (as próximas etapas podem acrescentar tipografia e layout sem tocar no
-que existe), o status do restaurante já é modelado (`draft → published`), e a
+que existe), o catálogo de planos e as colunas de assinatura já estão no
+restaurante — a Etapa 11 só precisa de cobrança e limites —, e a
 função `has_restaurant_role` aceita o array de papéis permitidos — ou seja, novos
 níveis de acesso não exigem reescrever policies.
 

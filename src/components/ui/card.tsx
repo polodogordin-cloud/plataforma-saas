@@ -39,7 +39,7 @@ export function Badge({
   className,
 }: {
   children: React.ReactNode;
-  tone?: "neutral" | "success" | "warning" | "info" | "muted";
+  tone?: "neutral" | "success" | "warning" | "info" | "muted" | "danger";
   className?: string;
 }) {
   const tones = {
@@ -48,6 +48,8 @@ export function Badge({
     warning: "bg-amber-50 text-amber-700 ring-amber-200",
     info: "bg-sky-50 text-sky-700 ring-sky-200",
     muted: "bg-ink-50 text-ink-500 ring-ink-200",
+    // Vermelho de bloqueio: usado para suspensão, onde nada está "quase certo".
+    danger: "bg-red-50 text-red-700 ring-red-200",
   }[tone];
 
   return (
