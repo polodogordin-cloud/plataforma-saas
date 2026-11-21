@@ -4,6 +4,7 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import {
   ArrowRight,
+  BellRing,
   BookOpenText,
   ExternalLink,
   ClipboardList,
@@ -26,6 +27,7 @@ import {
   getSessionUser,
 } from "@/lib/data/restaurants";
 import { getOrderBoardCounts } from "@/lib/data/orders-panel";
+import { tableRequestCounts } from "@/lib/data/table-requests";
 import { RESTAURANT_ROLE_LABEL } from "@/lib/types";
 import { firstName } from "@/lib/utils";
 
@@ -62,12 +64,16 @@ export default async function DashboardPage() {
   const restaurant = await getActiveRestaurant();
   if (!restaurant) redirect("/onboarding");
 
-  const [profile, counters, orderCounts] = await Promise.all([
+  const [profile, counters, orderCounts, requestCounts] = await Promise.all([
     getProfile(user.id),
     getRestaurantCounters(restaurant.id),
     // Etapa 7: os três números do salão, numa RPC só.
     getOrderBoardCounts(restaurant.id),
+    // Etapa 8: gente esperando atenção na mesa.
+    tableRequestCounts(restaurant.id),
   ]);
+
+  const awaitingAttention = requestCounts.pending + requestCounts.acknowledged;
 
   const greetingName = firstName(profile?.full_name) || "chef";
   const hasMenu = counters.categories > 0 || counters.products > 0;
@@ -131,6 +137,33 @@ export default async function DashboardPage() {
 
         {/* Cardápio público: o que o cliente vê e como compartilhar */}
         <PublicLink slug={restaurant.slug} status={restaurant.status} />
+
+        {/* Etapa 8: alguém na mesa está esperando. Vem antes dos pedidos
+            porque o cliente que levantou a mão está olhando para o salão. */}
+        {awaitingAttention > 0 && (
+          <Link
+            href="/app/pedidos"
+            className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3.5 transition-transform active:scale-[0.99]"
+          >
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-red-100 text-red-700">
+              <BellRing className="size-5" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold text-red-800">
+                🔴 {awaitingAttention}{" "}
+                {awaitingAttention === 1
+                  ? "solicitação pendente"
+                  : "solicitações pendentes"}
+              </span>
+              <span className="block text-xs text-red-700/80">
+                {requestCounts.bills > 0
+                  ? `${requestCounts.bills} ${requestCounts.bills === 1 ? "mesa pediu" : "mesas pediram"} a conta`
+                  : "Garçom chamado na mesa"}
+              </span>
+            </span>
+            <ArrowRight className="size-5 shrink-0 text-red-700" aria-hidden="true" />
+          </Link>
+        )}
 
         {/* Etapa 7: pedidos em destaque, com atalho para cada aba do painel */}
         <OrderBoardCards counts={orderCounts} />

@@ -15,3 +15,13 @@ export const ordersRealtimeChannel = (restaurantId: string) =>
 
 /** Tabelas observadas. `orders` cobre status/altas e `order_status_events` o histórico. */
 export const REALTIME_FILTER = { table: "orders", schema: "public" } as const;
+
+/**
+ * Canal das solicitações da mesa (Etapa 8).
+ *
+ * Um canal por restaurante, com nome próprio: o painel precisa saber quando
+ * um cliente chamou o garçom mesmo estando na tela de pedidos, e um canal
+ * separado deixa cada assinatura ser montada/derrubada de forma independente.
+ */
+export const tableRequestsRealtimeChannel = (restaurantId: string) =>
+  `table-requests:${restaurantId}`;

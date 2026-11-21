@@ -505,3 +505,68 @@ export const ORDER_CANCELLABLE: readonly OrderStatus[] = [
   "preparing",
   "ready",
 ];
+
+/* ==========================================================================
+   Etapa 8 · Chamar garçom e pedir a conta
+   ========================================================================== */
+
+/**
+ * Natureza da solicitação da mesa.
+ *
+ * `waiter` é "alguém venha aqui"; `bill` é "quero fechar a conta". São coisas
+ * diferentes para o salão: a segunda normalmente envolve levar a maquininha.
+ */
+export type TableRequestType = "waiter" | "bill";
+
+export type TableRequestStatus = "pending" | "acknowledged" | "resolved" | "cancelled";
+
+export const TABLE_REQUEST_TYPE_LABEL: Record<TableRequestType, string> = {
+  waiter: "Chamar garçom",
+  bill: "Solicitou conta",
+};
+
+/** Rótulo curto para o card do painel ("GARÇOM" / "CONTA"). */
+export const TABLE_REQUEST_TYPE_BADGE: Record<TableRequestType, string> = {
+  waiter: "Garçom",
+  bill: "Conta",
+};
+
+export const TABLE_REQUEST_STATUS_LABEL: Record<TableRequestStatus, string> = {
+  pending: "Pendente",
+  acknowledged: "Atendendo",
+  resolved: "Resolvida",
+  cancelled: "Cancelada",
+};
+
+/** Solicitação como o painel da equipe recebe. */
+export type TableRequest = {
+  id: string;
+  restaurant_id: string;
+  table_id: string;
+  table_name: string;
+  type: TableRequestType;
+  status: TableRequestStatus;
+  note: string | null;
+  created_at: string;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
+};
+
+/** Situação da mesa agora, para a tela do cliente decidir o que mostrar. */
+export type TableRequestState = {
+  waiter_status: TableRequestStatus | null;
+  waiter_since: string | null;
+  bill_status: TableRequestStatus | null;
+  bill_since: string | null;
+  /** Fim do cooldown da última solicitação (qualquer tipo). */
+  cooldown_until: string | null;
+};
+
+/** Resultado de `create_table_request` (cliente). */
+export type CreatedTableRequest = {
+  request_id: string;
+  table_name: string;
+  type: TableRequestType;
+  status: TableRequestStatus;
+  created_at: string;
+};

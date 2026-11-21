@@ -19,6 +19,7 @@ import { OrderCard } from "@/components/orders/order-card";
 import { OrderDetailSheet } from "@/components/orders/order-detail-sheet";
 import { useOrdersRealtime } from "@/components/orders/use-orders-realtime";
 import { usePanelOrders } from "@/components/orders/use-panel-orders";
+import { RequestsPanelHost } from "@/components/orders/requests-panel-host";
 import { setOrderStatus } from "@/actions/orders-panel";
 import {
   primeAudio,
@@ -313,6 +314,14 @@ export function OrdersPanel({
           </div>
         </div>
       )}
+
+      {/* -------------------------------------- solicitações da mesa (E8) */}
+      {/*
+        Acima das abas de propósito: quem chamou o garçom ou pediu a conta
+        está esperando AGORA, e a lista de pedidos já tem sua própria
+        prioridade (novos primeiro). A seção some sozinha quando a fila zera.
+      */}
+      <RequestsPanelHost restaurantId={restaurantId} />
 
       {/* ---------------------------------------------------- som */}
       <div className="mb-3 flex items-center gap-2">
