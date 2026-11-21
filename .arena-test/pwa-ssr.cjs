@@ -154,6 +154,36 @@ check("offline: tem ação para tentar de novo", offline.includes("Tentar de nov
 check("offline: respeita tema claro e escuro", offline.includes("prefers-color-scheme"));
 check("offline: alvo de toque confortável", offline.includes("min-height: 48px"));
 
+/* ------------------------------- deploy: o fonte vai junto para a lambda */
+
+/*
+ * A rota `/sw.js` lê `src/sw-source.js` do disco em tempo de execução. Na Vercel
+ * cada rota vira uma lambda com **somente os arquivos que o Next rastreou** — se
+ * o fonte não estiver em `.next/server/app/sw.js/route.js.nft.json`, produção
+ * serve o SW de emergência (sem cache) e ninguém percebe: o app funciona, só
+ * deixa de ser offline. Este teste transforma esse modo de falha silencioso em
+ * falha de build.
+ */
+{
+  const nft = path.join(ROOT, ".next/server/app/sw.js/route.js.nft.json");
+  if (!fs.existsSync(nft)) {
+    check("deploy: build existe para checar o rastreamento (rode npm run build)", false);
+  } else {
+    const traced = JSON.parse(fs.readFileSync(nft, "utf8")).files;
+    check(
+      "deploy: sw-source.js é rastreado para dentro da lambda",
+      traced.some((file) => file.endsWith("sw-source.js")),
+      traced.filter((f) => f.includes("sw")).join(","),
+    );
+    // `offline.html` vive em `public/`, que a Vercel serve como estático — não
+    // precisa ir na lambda. O que importa é estar no diretório publicado.
+    check(
+      "deploy: offline.html está em public/ (servido como estático)",
+      fs.existsSync(path.join(ROOT, "public/offline.html")),
+    );
+  }
+}
+
 /* ------------------------------------------------------------- head */
 
 const html = fs.readFileSync(path.join(ROOT, "src/app/layout.tsx"), "utf8");
