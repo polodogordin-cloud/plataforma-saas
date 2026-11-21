@@ -1363,6 +1363,144 @@ de cada papel):
 | `kitchen` cria estação | **bloqueado pelo RLS** |
 | outro tenant | 0 linhas |
 
+## Impressão de pedidos (Etapa 18)
+
+Cupom de impressora térmica — 58mm e 80mm — configurado em
+`Configurações → Impressão`, impresso pelo botão **🖨 Imprimir pedido** no
+detalhe do pedido e no card do KDS.
+
+### O que o navegador NÃO faz
+
+Esta é a decisão que organiza a etapa inteira, e ela contraria a expectativa
+mais comum de quem pede "impressão na térmica":
+
+> **Nenhuma página web abre a porta USB/COM de uma térmica, fala ESC/POS ou
+> seleciona a impressora instalada.** O que existe é `window.print()`, que
+> entrega o documento à caixa de diálogo do sistema e perde o rastro dali em
+> diante — a pessoa pode escolher outra impressora, outro papel ou cancelar.
+
+Por isso o produto faz três coisas e **não finge** uma quarta:
+
+1. **Monta o cupom exato para o papel** (`src/lib/printing.ts`): 32 colunas em
+   58mm, 48 em 80mm, quebra por palavra, alinhamento de valor à direita.
+2. **Imprime pela rota dedicada** `/app/pedidos/[id]/imprimir`, com `@page`
+   ajustado à largura e o resto da tela escondido por CSS.
+3. **Registra a solicitação**, não a confirmação: `print_jobs.status` nasce
+   `requested` e a tela diz "solicitada".
+4. **Não existe** — e a tela avisa — impressão automática sem toque. Isso exige
+   um bridge local ou um serviço de impressão, que a Etapa 18 **prepara** mas
+   não implementa.
+
+### `PrintProvider`: contrato pronto, integração não inventada
+
+`src/lib/print-provider.ts` define a interface que um bridge futuro implementa:
+
+```ts
+interface PrintProvider {
+  readonly kind: PrintProviderKind;
+  readonly available: boolean;
+  connect(): Promise<ProviderConnection>;
+  disconnect(): Promise<void>;
+  testPrint(request: PrintJobRequest): Promise<PrintResult>;
+  printOrder(request: PrintJobRequest): Promise<PrintResult>;
+}
+```
+
+| Provedor      | Hoje        | Como alcança a térmica                                  |
+| ------------- | ----------- | ------------------------------------------------------- |
+| `browser`     | **disponível** | janela do sistema + driver instalado no aparelho     |
+| `os`          | planejado   | serviço local que fala com a fila de impressão           |
+| `web_print`   | planejado   | servidor Web Print / CUPS na mesma rede                   |
+| `bridge`      | planejado   | app instalado no computador da loja (USB/rede, ESC/POS)   |
+| `service`     | planejado   | serviço de impressão em nuvem contratado à parte          |
+
+Dois detalhes que impedem a mentira:
+
+- `BrowserPrintProvider.connect()` responde **`supported: false`**. Devolver
+  `connected: true` faria a tela dizer "impressora pronta" para quem nunca
+  instalou driver.
+- `printOrder()` devolve `status: "requested"` e `confirmed: false`. Os
+  provedores planejados devolvem `unsupported` com o motivo — eles existem no
+  registro para a tela poder listá-los honestamente.
+
+### Banco
+
+Quatro tabelas, todas com `restaurant_id` e RLS:
+
+| Tabela           | O que guarda                                              |
+| ---------------- | --------------------------------------------------------- |
+| `print_settings` | uma linha por casa: modo, papel padrão, os 4 interruptores, cópias, rodapé |
+| `print_profiles` | destinos (COZINHA, BALCÃO, BAR, CAIXA) com papel e cópias próprios |
+| `printers`       | impressora física: nome, provedor, identificador, padrão    |
+| `print_jobs`     | **solicitações** de impressão (escrita só por RPC)          |
+
+`print_profiles` não guarda pedidos e `printers` não duplica equipamento por
+pedido: o documento sai de `orders`, `order_items`, `order_item_options`
+(Etapa 17) e `order_payments` (Etapa 16), pela RPC `get_print_order`.
+
+| Ação                                    | owner/admin | manager | kitchen | staff | waiter |
+| --------------------------------------- | ----------- | ------- | ------- | ----- | ------ |
+| Ver a configuração (`print_can_view`)   | sim         | sim     | sim     | sim   | sim    |
+| Configurar (`print_can_configure`)      | sim         | sim     | **não** | não   | não    |
+| Imprimir pedido / registrar job         | sim         | sim     | sim     | sim   | sim    |
+
+`kitchen` pode imprimir e não pode configurar: quem está na bancada precisa do
+papel, não precisa mudar o endereço da impressora.
+
+### Layout do cupom
+
+Cabeçalho com o restaurante, `PEDIDO #1042`, mesa, data/hora no fuso da casa,
+itens com quantidade, adicionais indentados, `OBS:` do item, observação do
+pedido em destaque, totais (quando o perfil quer preço) e forma de pagamento
+**somente quando existe recebimento registrado** — sem pagamento, nenhuma linha
+aparece. Escrever "NÃO PAGO" no papel da cozinha seria afirmar o que o app não
+sabe.
+
+### Página de teste
+
+`Imprimir teste` desenha régua contada (10, 20, 30…), linhas de borda `|...|` e
+um parágrafo que precisa caber. As quatro falhas de calibragem — tamanho,
+alinhamento, quebra de linha e largura — aparecem juntas no mesmo papel, em vez
+de um "hello world" que sempre parece funcionar.
+
+### Verificação
+
+```bash
+node .arena-test/print-lib.cjs        # 108 · colunas, quebra, alinhamento, pagamento, migration
+node .arena-test/print-provider.cjs   # 69 · contrato, honestidade do status, sem rede
+node .arena-test/print-security.cjs   # 67 · RBAC, tenant, não-duplicação, mobile
+node .arena-test/print-ui.cjs         # 72 · configuração e prévia reais em jsdom
+node .arena-test/print-ssr.cjs        # 46 · cupom e configuração no primeiro paint
+```
+
+Validado **contra o banco real** (transação descartável com claims de cada
+papel):
+
+| Passo | Resultado |
+| --- | --- |
+| `owner` cria os 4 perfis | `seed_default_print_profiles` → 4 linhas (`cozinha`, `balcao`, `bar`, `caixa`) |
+| rodar o seed de novo | 0 criados — idempotente por `(restaurant_id, slug)` |
+| salvar modo/papel/interruptores | `save_print_settings` devolve o config completo |
+| criar duas impressoras padrão | **só uma fica padrão** (índice parcial troca, não recusa) |
+| `get_print_order` | devolve pedido 1005 com item, `payments: []` (nada registrado) |
+| `kitchen` lê pedido para imprimir | aceito |
+| `kitchen` salva configuração | **`print_forbidden`** |
+| `kitchen` cria perfil/impressora | **`print_forbidden`** |
+| `kitchen` registra `log_print_job` | aceito |
+| config de restaurante inexistente | **`print_forbidden`** |
+
+### Lacunas conhecidas (e o que falta para fechar)
+
+- **Adicionais seguem sem escolha no cardápio.** `order_item_options` existe
+  desde a 17 e o cupom sabe imprimi-los, mas `create_order` ainda não recebe
+  opções — a linha simplesmente não aparece. Nada é simulado.
+- **Observação por item** idem: coluna existe, cliente não envia.
+- **Impressão automática sem toque** exige provedor `bridge`/`service`. O modo
+  `auto` hoje abre a tela de impressão no aceite do pedido; o toque final é da
+  pessoa, e a tela explica por quê.
+- **Sem divisão de itens por perfil.** O perfil organiza destino e papel;
+  "bebida vai para o bar" é a próxima evolução, e a chave `kind` já existe.
+
 ---
 
 ## Rotas
@@ -1410,6 +1548,8 @@ de cada papel):
 | `/app/analytics`                      | **Relatórios do restaurante** (Etapa 16)        |
 | `/admin/analytics`                    | **Métricas globais da plataforma** (Etapa 16)   |
 | `/kitchen`                            | **Painel de cozinha (KDS)** — tablet, tempo real |
+| `/app/configuracoes/impressao`        | **Impressão** — papel, perfis, impressoras (E18) |
+| `/app/pedidos/[id]/imprimir`          | **Cupom térmico** do pedido — 58/80mm (Etapa 18) |
 
 Fluxo principal: **cadastro → login automático → criar restaurante → dashboard**.
 O middleware do Supabase renova a sessão e exige login em `/app`,
@@ -1618,6 +1758,7 @@ scripts/                auditoria de layout + teste de RLS
 | ~~14~~ | ~~Preparação para produção~~     | ~~ambientes, domínio, CSP, rate limit, erros, health — **concluída**~~ |
 | ~~16~~ | ~~Analytics e relatórios~~      | ~~`/app/analytics` + `/admin/analytics`, RPCs de agregação — **concluída**~~ |
 | ~~17~~ | ~~Painel de cozinha (KDS)~~     | ~~`/kitchen`, papéis `kitchen`/`waiter` — **concluída**~~ |
+| ~~18~~ | ~~Impressão de pedidos (térmica)~~ | ~~`print_settings`/`print_profiles`/`printers`, `PrintProvider` — **concluída**~~ |
 | 15    | Cobrança real (gateway)         | `lib/billing` — Stripe/Mercado Pago/Asaas via `PAYMENT_PROVIDER` |
 | —     | Observabilidade                 | Sentry/Datadog nos dois pontos de `console.error` já marcados |
 | —     | WhatsApp Business API           | `lib/whatsapp/provider.ts` + `whatsapp_messages` (estrutura pronta) |

@@ -1509,3 +1509,185 @@ export const KITCHEN_ACTION_LABEL: Record<KitchenAction, string> = {
   finish: "Finalizar",
   cancel: "Cancelar",
 };
+
+/* ==========================================================================
+   Etapa 18 · Impressão de pedidos
+   ========================================================================== */
+
+/** Largura do rolo. Os dois padrões de mercado para térmica de balcão. */
+export type PaperWidth = "58" | "80";
+
+/**
+ * Natureza do perfil de impressão.
+ *
+ * Hoje é rótulo: o perfil diz *para onde* um pedido vai quando alguém imprime.
+ * A divisão automática por tipo de item (bebida → bar) é evolução futura, e é
+ * para isso que o campo já existe.
+ */
+export type PrintProfileKind = "kitchen" | "counter" | "bar" | "cashier";
+
+export const PRINT_PROFILE_KIND_LABEL: Record<PrintProfileKind, string> = {
+  kitchen: "Cozinha",
+  counter: "Balcão",
+  bar: "Bar",
+  cashier: "Caixa",
+};
+
+/**
+ * Como a impressão é executada.
+ *
+ * `browser` é o único que existe hoje, e ele **não** conversa com a térmica:
+ * abre a caixa de diálogo do sistema e depende do driver instalado. Os demais
+ * estão declarados para que a tela possa dizer a verdade — "precisa de bridge
+ * local" — em vez de fingir funcionar.
+ */
+export type PrintProviderKind = "browser" | "os" | "web_print" | "bridge" | "service";
+
+export const PRINT_PROVIDER_LABEL: Record<PrintProviderKind, string> = {
+  browser: "Navegador",
+  os: "Sistema operacional",
+  web_print: "Web Print",
+  bridge: "Bridge local",
+  service: "Serviço de impressão",
+};
+
+/** O que cada provedor consegue hoje. Curto de propósito: é o que a tela diz. */
+export type PrintProviderSupport = "available" | "planned";
+
+export const PRINT_PROVIDER_SUPPORT: Record<PrintProviderKind, PrintProviderSupport> = {
+  browser: "available",
+  os: "planned",
+  web_print: "planned",
+  bridge: "planned",
+  service: "planned",
+};
+
+/** Texto honesto sobre o que cada provedor exige. Sem promessa vaga. */
+export const PRINT_PROVIDER_HINT: Record<PrintProviderKind, string> = {
+  browser:
+    "Abre a caixa de diálogo do navegador. A impressora precisa estar instalada no aparelho; a térmica é escolhida na janela do sistema.",
+  os: "Depende de um serviço local que fale com a fila de impressão do sistema.",
+  web_print:
+    "Depende de um servidor Web Print/CUPS na mesma rede da impressora.",
+  bridge:
+    "Depende de um aplicativo instalado no computador da loja, ligado à térmica por USB ou rede.",
+  service:
+    "Depende de um serviço de impressão em nuvem contratado à parte.",
+};
+
+/** Modo de operação configurado pela casa. */
+export type PrintMode = "manual" | "auto";
+
+export const PRINT_MODE_LABEL: Record<PrintMode, string> = {
+  manual: "Manual",
+  auto: "Automática",
+};
+
+export type PrintJobStatus = "requested" | "printed" | "failed" | "unsupported";
+
+export const PRINT_JOB_STATUS_LABEL: Record<PrintJobStatus, string> = {
+  requested: "Solicitada",
+  printed: "Confirmada pelo provedor",
+  failed: "Falhou",
+  unsupported: "Provedor não disponível",
+};
+
+/** Configuração da casa. Mesmos nomes da tabela, sem `restaurant_id`. */
+export type PrintSettings = {
+  mode: PrintMode;
+  default_paper_width: PaperWidth;
+  print_orders: boolean;
+  print_tickets: boolean;
+  print_kitchen: boolean;
+  print_counter: boolean;
+  copies: number;
+  footer_note: string | null;
+};
+
+export type PrintProfile = {
+  id: string;
+  name: string;
+  slug: string;
+  kind: PrintProfileKind;
+  paper_width: PaperWidth;
+  copies: number;
+  is_active: boolean;
+  sort_order: number;
+};
+
+export type Printer = {
+  id: string;
+  profile_id: string | null;
+  name: string;
+  provider: PrintProviderKind;
+  identifier: string | null;
+  paper_width: PaperWidth;
+  is_default: boolean;
+  is_active: boolean;
+  notes: string | null;
+};
+
+/** Tudo o que a tela de configuração consome numa chamada. */
+export type PrintConfig = {
+  settings: PrintSettings;
+  profiles: PrintProfile[];
+  printers: Printer[];
+  can_configure: boolean;
+};
+
+/**
+ * Pedido montado para o papel.
+ *
+ * `payments` só traz pagamento **real** (livro da Etapa 16). Vazio significa
+ * "ninguém registrou recebimento" — e o layout então omite a linha. Escrever
+ * "NÃO PAGO" no papel seria afirmar algo que o app não sabe.
+ */
+export type PrintOrderDocument = {
+  restaurant: {
+    id: string;
+    name: string;
+    phone: string | null;
+    address: string | null;
+    city: string | null;
+    timezone: string;
+  };
+  settings: {
+    mode: PrintMode;
+    default_paper_width: PaperWidth;
+    copies: number;
+    footer_note: string | null;
+    show_prices: boolean;
+  };
+  order: {
+    id: string;
+    order_number: number;
+    status: OrderStatus;
+    channel: OrderChannel;
+    table_name: string;
+    subtotal: number;
+    fees: number;
+    discount: number;
+    total: number;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
+    items: Array<{
+      name: string;
+      quantity: number;
+      unit_price: number;
+      subtotal: number;
+      notes: string | null;
+      options: Array<{
+        group_name: string;
+        name: string;
+        price_delta: number;
+        quantity: number;
+      }>;
+    }>;
+    payments: Array<{
+      method: PaymentMethod;
+      amount: number;
+      paid_at: string;
+    }>;
+  };
+};

@@ -8,6 +8,7 @@ import {
   LogOut,
   MessageCircle,
   Palette,
+  Printer,
   ShieldCheck,
   Store,
   UserRound,
@@ -54,6 +55,14 @@ const groups: { title: string; items: Item[] }[] = [
         label: "WhatsApp",
         description: "Número, mensagem inicial e botão no cardápio",
         icon: MessageCircle,
+      },
+      {
+        // Etapa 18. Fica junto do restaurante porque é configuração de
+        // operação da casa: papel, perfis e impressoras físicas.
+        href: "/app/configuracoes/impressao",
+        label: "Impressão",
+        description: "Papel térmico, perfis, impressoras e teste",
+        icon: Printer,
       },
     ],
   },
@@ -207,7 +216,7 @@ export default async function SettingsPage() {
         </form>
 
         <p className="pb-2 text-center text-xs text-ink-400">
-          Menuvo · versão 0.13.0 (Etapa 13)
+          Menuvo · versão 0.18.0 (Etapa 18)
         </p>
       </main>
     </>

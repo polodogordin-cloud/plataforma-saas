@@ -101,8 +101,20 @@ check(
 
 check(
   "papéis: papéis de restaurante e de plataforma são vocabulários distintos",
-  Object.keys(T.RESTAURANT_ROLE_LABEL).length === 4 &&
-    Object.keys(T.PLATFORM_ROLE_LABEL).length === 2,
+  // O que este teste quer provar é a *separação dos vocabulários*, não o número
+  // de papéis. Contar 4 aqui virou falso quando a Etapa 17 criou `kitchen` e
+  // `waiter`: nenhum dos dois é papel de plataforma, e é isso que importa.
+  // Contagem fixa envelhece e reprova a etapa seguinte em vez de um bug.
+  // Plataforma é um vocabulário *menor* e disjunto do operacional: `owner` e
+  // `admin` coincidem de nome entre os dois (dono da plataforma × dono da casa),
+  // mas nenhum papel operacional (`manager`, `staff`, `kitchen`, `waiter`) existe
+  // como papel de plataforma. Era isso que contar "4" tentava dizer.
+  Object.keys(T.PLATFORM_ROLE_LABEL).length === 2 &&
+    ["manager", "staff", "kitchen", "waiter"].every(
+      (role) => !(role in T.PLATFORM_ROLE_LABEL) && role in T.RESTAURANT_ROLE_LABEL,
+    ) &&
+    Object.keys(T.PLATFORM_ROLE_LABEL).length < Object.keys(T.RESTAURANT_ROLE_LABEL).length,
+  `restaurante=${Object.keys(T.RESTAURANT_ROLE_LABEL).join(",")} plataforma=${Object.keys(T.PLATFORM_ROLE_LABEL).join(",")}`,
 );
 
 check(

@@ -59,6 +59,7 @@ export function OrdersPanel({
   timeZone,
   initialPending,
   initialTab,
+  autoPrint = false,
 }: {
   restaurantId: string;
   timeZone: string;
@@ -66,6 +67,17 @@ export function OrdersPanel({
   initialPending: number;
   /** Aba pedida pela URL (`/app/pedidos?tab=ready`). */
   initialTab?: PanelTab | null;
+  /**
+   * Etapa 18: `print_settings.mode === "auto"`.
+   *
+   * Ao confirmar um pedido, o painel abre a tela de impressão numa guia nova.
+   * Isso é **intenção de automatizar**, não impressão garantida: navegador só
+   * abre janela a partir de gesto do usuário (aqui tem: o toque em "Confirmar"),
+   * e mesmo assim pode bloquear. Quando bloqueia, o aviso aparece e o botão
+   * "🖨 Imprimir pedido" continua no detalhe — nenhum pedido deixa de ser
+   * impresso por causa disso.
+   */
+  autoPrint?: boolean;
 }) {
   const { active, done, loading, loadingMore, hasMoreDone, refresh, loadMoreDone, historyFor } =
     usePanelOrders();
@@ -179,6 +191,25 @@ export function OrdersPanel({
     setDetail((current) =>
       current && current.id === order.id ? { ...current, status: result.status } : current,
     );
+
+    /*
+     * Impressão automática (Etapa 18). Só no aceite: é o momento em que o papel
+     * precisa chegar à cozinha. Imprimir de novo em "pronto" gastaria bobina
+     * com a mesma informação.
+     */
+    if (autoPrint && result.status === "confirmed") {
+      const popup = window.open(
+        `/app/pedidos/${order.id}/imprimir?auto=1`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+      if (!popup) {
+        setError(
+          "O navegador bloqueou a janela de impressão. Abra o pedido e toque em “🖨 Imprimir pedido”.",
+        );
+      }
+    }
+
     await refresh();
   };
 
