@@ -484,7 +484,15 @@ async function testPlanEditor() {
   // ---- configuração de trial
   reset();
   const settings = await render(
-    React.createElement(lib.components.TrialSettingsForm, { trialDays: 7, graceDays: 5 }),
+    React.createElement(lib.components.TrialSettingsForm, {
+      trialDays: 7,
+      graceDays: 5,
+      trialPlanId: "basico",
+      plans: [
+        { id: "basico", name: "Básico", price: 49.9 },
+        { id: "profissional", name: "Profissional", price: 99.9 },
+      ],
+    }),
   );
 
   check("admin: campo de dias de teste", settings.textContent.includes("Dias de teste gratuito"));
@@ -507,14 +515,53 @@ async function testPlanEditor() {
     actionsStub.setPlatformSetting(data);
   });
   await flush();
-  console.log("DBG after submit, calls:", actionsStub.__calls().length);
 
   const call = actionsStub.__calls().at(-1);
-  console.log("DBG settings call:", call?.action, call?.args && call.args.constructor && call.args.constructor.name, call?.args?.get?.("key"));
   check(
     "admin: salvar configuração envia a chave certa",
-    call?.action === "setPlatformSetting" && /** @type {FormData} */ (call.args).get("key") === "trial_days" && /** @type {FormData} */ (call.args).get("value") === "7",
+    call?.action === "setPlatformSetting" &&
+      (/** @type {FormData} */ (call.args)).get("key") === "trial_days" &&
+      (/** @type {FormData} */ (call.args)).get("value") === "7",
     String(call?.action),
+  );
+
+  // ---- plano concedido no teste
+  //
+  // Regressão de um defeito real: o trial dava o plano MAIS CARO (ilimitado), e
+  // o cliente terminava o teste acima dos limites do plano que conseguiria
+  // pagar — preso sem poder assinar. O seletor existe para isso ser decidido.
+  const planForm = queryAll(settings, "form").at(-1);
+  const planSelect = settings.querySelector("#trial-plan");
+
+  check("admin: seletor de plano do teste existe", Boolean(planSelect));
+  check(
+    "admin: seletor restrito aos planos pagos enviados",
+    queryAll(settings, "#trial-plan option").length === 3, // automático + 2 planos
+  );
+  check("admin: plano do teste atual vem selecionado", planSelect?.value === "basico", planSelect?.value);
+  check(
+    "admin: opção automática deixa o banco escolher",
+    queryAll(settings, "#trial-plan option")[0].value === "",
+  );
+  check(
+    "admin: avisa por que não se concede o plano mais caro",
+    settings.textContent.includes("plano mais caro"),
+  );
+
+  await act(async () => {
+    /** @type {FormData} */ (globalThis.FormData);
+    const data = new dom.window.FormData(planForm);
+    actionsStub.setPlatformSetting(data);
+  });
+  await flush();
+
+  const planCall = actionsStub.__calls().at(-1);
+  check(
+    "admin: seletor envia a chave trial_plan_id",
+    planCall?.action === "setPlatformSetting" &&
+      (/** @type {FormData} */ (planCall.args)).get("key") === "trial_plan_id" &&
+      (/** @type {FormData} */ (planCall.args)).get("value") === "basico",
+    String((/** @type {FormData} */ (planCall?.args))?.get?.("key")),
   );
 }
 

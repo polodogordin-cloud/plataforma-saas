@@ -364,6 +364,88 @@ check(
   billingLib.includes('rpc("change_plan"'),
 );
 
+/* ============ catálogo comercial: vitrine e plano do teste ============ */
+//
+// Três defeitos reais apareceram só ao abrir a produção depois do merge:
+//   1. o plano herdado `pro` (R$ 0, limite ilimitado) estava ativo na vitrine;
+//   2. os nomes/descrições dos planos novos perderam a acentuação na aplicação;
+//   3. o teste gratuito era concedido no plano MAIS CARO — o cliente terminava
+//      o período acima do limite do plano que conseguiria pagar e ficava preso.
+// As checagens abaixo prendem a correção no código, não só no banco.
+
+const billingData = fsSrc("src/lib/data/billing.ts");
+const plansPage = fsSrc("src/app/planos/page.tsx");
+const adminPlansPage = fsSrc("src/app/admin/planos/page.tsx");
+const trialSettings = fsSrc("src/components/admin/trial-settings.tsx");
+const billingActionsFile = fsSrc("src/actions/billing.ts");
+
+// O filtro de "plano pago" é do banco: `public_plans` só devolve ativo E com
+// preço acima de zero. Aqui conferimos que o SQL aplicado carrega esse filtro e
+// que a tela consome a RPC (não faz select direto em `plans`).
+const fixSql = fsSrc("supabase/migrations/0013_plan_catalog_and_trial_fix.sql");
+
+check(
+  "vitrine: o banco só oferece plano ativo e pago",
+  /where pl\.is_active\s*\n?\s*and pl\.price_monthly > 0/.test(fixSql),
+  "filtro ausente em public_plans",
+);
+
+check(
+  "vitrine: a tela lê a RPC, não a tabela",
+  billingData.includes('rpc("public_plans")') && !/from\("plans"\)/.test(billingData),
+);
+
+check(
+  "vitrine: anuncia qual plano o teste concede, vindo do banco",
+  plansPage.includes("trial_plan_id") && /trialPlanName/.test(plansPage),
+);
+
+check(
+  "vitrine: CTA não promete plano grátis (não há plano de preço zero na oferta)",
+  !plansPage.includes('"Começar grátis"') && plansPage.includes("Começar agora"),
+);
+
+check(
+  "vitrine: cards seguem verticais, sem tabela de comparação",
+  !/<table/.test(plansPage) && plansPage.includes("flex-col"),
+);
+
+check(
+  "trial: plano configurável é lido em `platform_settings`",
+  billingData.includes("trial_plan_id") && /trial_plan_id/.test(fsSrc("src/lib/types.ts")),
+);
+
+check(
+  "trial: seletor do plano lista apenas planos ativos e pagos",
+  /is_active\s*&&\s*plan\.price\s*>\s*0/.test(adminPlansPage),
+);
+
+check(
+  "trial: opção automática existe (banco escolhe o mais barato)",
+  trialSettings.includes("Automático (plano pago mais barato)"),
+);
+
+check(
+  "trial: a tela explica o risco de conceder o plano mais caro",
+  /mais caro/.test(trialSettings),
+);
+
+check(
+  "config: aceita trial_plan_id como texto, dias como número",
+  billingActionsFile.includes('key === "trial_plan_id"') &&
+    billingActionsFile.includes("payload = raw.trim()"),
+);
+
+check(
+  "config: erro de plano inválido vira mensagem em PT-BR",
+  billingActionsFile.includes("Escolha um plano ativo."),
+);
+
+check(
+  "config: dias fora de 0..365 continuam recusados no servidor",
+  billingActionsFile.includes("value < 0 || value > 365"),
+);
+
 /* ===================== relatório ===================== */
 
 const passed = results.filter((r) => r.ok).length;

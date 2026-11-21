@@ -291,22 +291,43 @@ export async function setPlatformSetting(formData: FormData): Promise<AdminPlanR
   }
 
   const key = String(formData.get("key") ?? "");
-  const value = Number(String(formData.get("value") ?? ""));
+  const raw = String(formData.get("value") ?? "");
 
-  if (key !== "trial_days" && key !== "grace_days") {
+  if (key !== "trial_days" && key !== "grace_days" && key !== "trial_plan_id") {
     return { ok: false, error: "Configuração desconhecida." };
-  }
-  if (!Number.isFinite(value) || value < 0 || value > 365) {
-    return { ok: false, error: "Informe um número de dias entre 0 e 365." };
   }
 
   const supabase = await createClient();
+
+  // `trial_plan_id` é texto (id do plano); os outros dois são dias.
+  let payload: unknown;
+  if (key === "trial_plan_id") {
+    payload = raw.trim();
+  } else {
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0 || value > 365) {
+      return { ok: false, error: "Informe um número de dias entre 0 e 365." };
+    }
+    payload = Math.trunc(value);
+  }
+
   const { error } = await supabase.rpc("admin_set_platform_setting", {
     p_key: key,
-    p_value: Math.trunc(value),
+    p_value: payload,
   });
 
-  if (error) return { ok: false, error: "Não foi possível salvar a configuração." };
+  if (error) {
+    if (error.message.includes("invalid_setting")) {
+      return {
+        ok: false,
+        error:
+          key === "trial_plan_id"
+            ? "Escolha um plano ativo."
+            : "Informe um número de dias entre 0 e 365.",
+      };
+    }
+    return { ok: false, error: "Não foi possível salvar a configuração." };
+  }
 
   revalidatePath("/admin/planos");
   revalidatePath("/admin/assinaturas");

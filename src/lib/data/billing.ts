@@ -143,11 +143,12 @@ export const getPublicPlans = cache(async (): Promise<PublicPlansPayload> => {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("public_plans");
 
-  if (error || !isRecord(data)) return { trial_days: 7, plans: [] };
+  if (error || !isRecord(data)) return { trial_days: 7, trial_plan_id: null, plans: [] };
 
   const plans = Array.isArray(data.plans) ? data.plans : [];
   return {
     trial_days: toNumber(data.trial_days) || 7,
+    trial_plan_id: typeof data.trial_plan_id === "string" ? data.trial_plan_id : null,
     plans: plans.filter(isRecord).map((plan) => toPlanCatalog(plan)),
   };
 });
@@ -221,21 +222,41 @@ export async function listAdminSubscriptions(search?: string): Promise<AdminSubs
   }));
 }
 
-/** Configuração global (trial_days, grace_days) para a tela do admin. */
-export async function getPlatformSettings(): Promise<{ trial_days: number; grace_days: number }> {
+export type PlatformSettings = {
+  trial_days: number;
+  grace_days: number;
+  /** Plano concedido no teste gratuito (null = o banco escolhe o mais barato). */
+  trial_plan_id: string | null;
+};
+
+/** Configuração global (trial, tolerância e plano do teste) para o admin. */
+export async function getPlatformSettings(): Promise<PlatformSettings> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("platform_settings")
     .select("key, value")
-    .in("key", ["trial_days", "grace_days"]);
+    .in("key", ["trial_days", "grace_days", "trial_plan_id"]);
 
-  if (error || !data) return { trial_days: 7, grace_days: 5 };
+  if (error || !data) return { trial_days: 7, grace_days: 5, trial_plan_id: null };
 
-  const result: Record<string, number> = {};
+  const numbers: Record<string, number> = {};
+  let trialPlanId: string | null = null;
+
   for (const row of data as Array<{ key: string; value: unknown }>) {
+    if (row.key === "trial_plan_id") {
+      // jsonb string pode chegar como string pura ou como JSON serializado.
+      const raw = String(row.value ?? "").replace(/^"|"$/g, "");
+      trialPlanId = raw.length > 0 ? raw : null;
+      continue;
+    }
     // jsonb numérico chega como number; string é aceita por robustez.
     const raw = Number(row.value);
-    if (Number.isFinite(raw)) result[row.key] = raw;
+    if (Number.isFinite(raw)) numbers[row.key] = raw;
   }
-  return { trial_days: result.trial_days ?? 7, grace_days: result.grace_days ?? 5 };
+
+  return {
+    trial_days: numbers.trial_days ?? 7,
+    grace_days: numbers.grace_days ?? 5,
+    trial_plan_id: trialPlanId,
+  };
 }
