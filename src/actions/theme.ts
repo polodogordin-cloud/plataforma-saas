@@ -54,6 +54,24 @@ export type SaveThemeResult =
   | { ok: false; error: string };
 
 /** Traduz o erro da RPC para algo que o dono do restaurante entenda. */
+/**
+ * Recurso do plano (Etapa 11).
+ *
+ * A personalização visual é `custom_theme`: no plano Grátis ela não existe. A
+ * checagem roda aqui **antes** da RPC e de novo no banco (`save_restaurant_theme`
+ * valida o vínculo), porque esconder o botão nunca foi autorização.
+ */
+async function requireThemeFeature(restaurantId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("has_feature", {
+    p_restaurant_id: restaurantId,
+    p_feature: "custom_theme",
+  });
+
+  if (error) return null;
+  return data === true;
+}
+
 function translateError(message: string | undefined): string {
   if (message?.includes("theme_forbidden")) {
     return "Você não tem permissão para personalizar este cardápio.";
@@ -74,6 +92,16 @@ export async function saveTheme(input: unknown): Promise<SaveThemeResult> {
   const restaurant = await getActiveRestaurant();
   if (!restaurant) {
     return { ok: false, error: "Restaurante não encontrado." };
+  }
+
+  // Recurso do plano (Etapa 11): `custom_theme` não existe no Grátis. Recusar
+  // aqui dá a mensagem certa antes do trabalho de gravar; a RPC continua
+  // guardando o vínculo, então a feature é conferência, não autorização.
+  if (!(await requireThemeFeature(restaurant.id))) {
+    return {
+      ok: false,
+      error: "Seu plano não inclui personalização visual. Veja os planos para liberar este recurso.",
+    };
   }
 
   const parsed = themeSchema.safeParse(input);
@@ -127,6 +155,13 @@ export type ResetThemeResult = { ok: true; message: string } | { ok: false; erro
 export async function resetTheme(): Promise<ResetThemeResult> {
   const restaurant = await getActiveRestaurant();
   if (!restaurant) return { ok: false, error: "Restaurante não encontrado." };
+
+  if (!(await requireThemeFeature(restaurant.id))) {
+    return {
+      ok: false,
+      error: "Seu plano não inclui personalização visual. Veja os planos para liberar este recurso.",
+    };
+  }
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("reset_restaurant_theme", {
@@ -189,6 +224,8 @@ export async function createUploadTarget(
   const restaurant = await getActiveRestaurant();
   if (!restaurant) return { ok: false, error: "Restaurante não encontrado." };
 
+  // Upload de imagem NÃO exige `custom_theme`: a logo do cardápio padrão é
+  // usada por todos os planos. Quem exige a feature é salvar o tema.
   if (kind !== "logo" && kind !== "cover") {
     return { ok: false, error: "Tipo de imagem inválido." };
   }

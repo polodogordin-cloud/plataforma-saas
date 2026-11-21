@@ -60,6 +60,37 @@ function duplicateNameError(error: { code?: string; message?: string } | null) {
   return null;
 }
 
+/**
+ * Limite de plano (Etapa 11).
+ *
+ * O trigger `enforce_plan_limit` recusa o insert com
+ * `plan_limit_reached:<chave>:<limite>` e a mensagem da tela vem daqui — a
+ * mesma frase que o item 8 do escopo pede ("Seu plano atingiu o limite de
+ * mesas."), mais o caminho de saída. Sem isso o dono veria "não foi possível
+ * criar o produto" e tentaria de novo para sempre.
+ */
+function planLimitError(error: { message?: string }): ActionState | null {
+  if (!error.message?.includes("plan_limit_reached")) return null;
+
+  const [, key] = error.message.split(":");
+  const label =
+    key === "max_products"
+      ? "produtos"
+      : key === "max_tables"
+        ? "mesas"
+        : key === "max_categories"
+          ? "categorias"
+          : key === "max_users"
+            ? "usuários"
+            : "itens";
+
+  return {
+    ok: false,
+    message: `Seu plano atingiu o limite de ${label}. Veja os planos para liberar mais.`,
+    fieldErrors: { plan: [`Limite de ${label} atingido.`] },
+  };
+}
+
 function revalidateMenu() {
   revalidatePath("/app", "layout");
   revalidatePath("/app/cardapio");
@@ -94,6 +125,8 @@ export async function createCategory(
   });
 
   if (error) {
+    const limit = planLimitError(error);
+    if (limit) return limit;
     const friendly = duplicateNameError(error);
     if (friendly) return { ok: false, fieldErrors: { name: [friendly] } };
     return { ok: false, message: "Não foi possível criar a categoria." };
@@ -256,6 +289,8 @@ export async function createProduct(
   });
 
   if (error) {
+    const limit = planLimitError(error);
+    if (limit) return limit;
     const friendly = duplicateNameError(error);
     if (friendly) return { ok: false, fieldErrors: { internalCode: [friendly] } };
     return { ok: false, message: "Não foi possível criar o produto." };

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatPrice } from "@/lib/validation";
 
 /**
  * Card de métrica do dashboard master.
@@ -17,6 +18,7 @@ export function MetricCard({
   href,
   hint,
   tone = "neutral",
+  format = "plain",
 }: {
   label: string;
   value: number | string;
@@ -24,6 +26,12 @@ export function MetricCard({
   href?: string;
   hint?: string;
   tone?: "neutral" | "brand" | "amber" | "danger" | "sky";
+  /**
+   * `currency` formata em reais (Etapa 11: receita mensal). O valor chega como
+   * número do banco — a decisão de exibir "R$ 199,80" fica na apresentação,
+   * não no RPC.
+   */
+  format?: "plain" | "currency";
 }) {
   const tones = {
     neutral: "bg-ink-100 text-ink-600",
@@ -44,7 +52,7 @@ export function MetricCard({
         )}
       </div>
       <p className="mt-2.5 text-[1.55rem] leading-none font-semibold tabular-nums tracking-tight text-ink-900">
-        {value}
+        {format === "currency" && typeof value === "number" ? formatPrice(value) : value}
       </p>
       <p className="mt-1.5 text-[0.78rem] font-medium leading-tight text-ink-500">{label}</p>
       {hint && <p className="mt-0.5 text-[0.68rem] leading-tight text-ink-400">{hint}</p>}

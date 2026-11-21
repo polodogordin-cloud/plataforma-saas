@@ -7,6 +7,9 @@ import { TablesManager } from "@/components/tables/tables-manager";
 import { getActiveRestaurant } from "@/lib/data/restaurants";
 import { listTables } from "@/lib/data/tables";
 import { listNfcHistory, listRestaurantNfcTags } from "@/lib/data/nfc";
+import { getMySubscription } from "@/lib/data/billing";
+import { isLimitReached } from "@/lib/plan-rules";
+import { LimitReachedNotice } from "@/components/billing/usage-meter";
 
 export const metadata: Metadata = { title: "Mesas" };
 
@@ -14,9 +17,10 @@ export default async function TablesPage() {
   const restaurant = await getActiveRestaurant();
   if (!restaurant) redirect("/onboarding");
 
-  const [tables, nfcTags] = await Promise.all([
+  const [tables, nfcTags, usage] = await Promise.all([
     listTables(restaurant.id),
     listRestaurantNfcTags(restaurant.id),
+    getMySubscription(restaurant.id),
   ]);
   const canEdit = restaurant.role === "owner" || restaurant.role === "admin";
   const origin = await resolveOrigin();
@@ -53,6 +57,18 @@ export default async function TablesPage() {
               abrir o cardápio depois que você publicar o restaurante.
             </p>
           </div>
+        )}
+
+        {/*
+          Limite de mesas (Etapa 11). O aviso aparece antes do botão para o
+          dono não preencher o formulário e receber um erro no fim; a recusa de
+          verdade é do trigger `enforce_plan_limit`.
+        */}
+        {usage && isLimitReached(usage.usage.tables) && (
+          <LimitReachedNotice
+            className="mb-4"
+            message={`Seu plano ${usage.plan.name} permite ${usage.usage.tables.limit} mesas e você já tem ${usage.usage.tables.used}.`}
+          />
         )}
 
         <TablesManager

@@ -6,6 +6,9 @@ import { AppHeader } from "@/components/app/app-header";
 import { MenuManager } from "@/components/menu/menu-manager";
 import { getActiveRestaurant } from "@/lib/data/restaurants";
 import { getMenu } from "@/lib/data/menu";
+import { getMySubscription } from "@/lib/data/billing";
+import { isLimitReached } from "@/lib/plan-rules";
+import { LimitReachedNotice } from "@/components/billing/usage-meter";
 
 export const metadata: Metadata = { title: "Cardápio" };
 
@@ -13,7 +16,10 @@ export default async function MenuPage() {
   const restaurant = await getActiveRestaurant();
   if (!restaurant) redirect("/onboarding");
 
-  const { menu, uncategorized } = await getMenu(restaurant.id);
+  const [{ menu, uncategorized }, usage] = await Promise.all([
+    getMenu(restaurant.id),
+    getMySubscription(restaurant.id),
+  ]);
   const canEdit = restaurant.role === "owner" || restaurant.role === "admin";
 
   return (
@@ -56,6 +62,22 @@ export default async function MenuPage() {
             </p>
           </div>
         )}
+
+        {/* Limite de produtos/categorias (Etapa 11) */}
+        {usage && isLimitReached(usage.usage.products) && (
+          <LimitReachedNotice
+            className="mb-4"
+            message={`Seu plano ${usage.plan.name} permite ${usage.usage.products.limit} produtos e você já tem ${usage.usage.products.used}.`}
+          />
+        )}
+        {usage &&
+          !isLimitReached(usage.usage.products) &&
+          isLimitReached(usage.usage.categories) && (
+            <LimitReachedNotice
+              className="mb-4"
+              message={`Seu plano ${usage.plan.name} permite ${usage.usage.categories.limit} categorias e você já tem ${usage.usage.categories.used}.`}
+            />
+          )}
 
         {!canEdit && (
           <div className="mb-4 flex items-start gap-3 rounded-xl bg-amber-50 px-4 py-3 ring-1 ring-inset ring-amber-200">

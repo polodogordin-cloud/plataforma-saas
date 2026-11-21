@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
 import { BottomNav } from "@/components/app/bottom-nav";
 import { SuspendedNotice } from "@/components/app/suspended-notice";
+import { SubscriptionNotice } from "@/components/app/subscription-notice";
 import { getActiveRestaurant, getSessionUser } from "@/lib/data/restaurants";
+import { getMySubscription } from "@/lib/data/billing";
+import { SUBSCRIPTION_STATE_ALLOWS_ACCESS } from "@/lib/types";
 
 export default async function AppLayout({
   children,
@@ -29,6 +32,29 @@ export default async function AppLayout({
         restaurantName={restaurant.name}
         reason={restaurant.suspended_reason}
         suspendedAt={restaurant.suspended_at}
+      />
+    );
+  }
+
+  /**
+   * Assinatura sem acesso (Etapa 11).
+   *
+   * `expired` e `cancelled` trancam o painel com uma tela que explica e leva
+   * para `/planos`. `past_due` continua entrando de propósito: o restaurante em
+   * atraso ainda está operando, e travar o salão por causa de uma fatura em
+   * processamento custaria mais do que a mensalidade.
+   *
+   * De novo: conforto, não segurança. O trigger `enforce_subscription_active`
+   * é quem recusa escrita em produto, mesa e categoria.
+   */
+  const subscription = await getMySubscription(restaurant?.id);
+  if (subscription && !SUBSCRIPTION_STATE_ALLOWS_ACCESS[subscription.status]) {
+    return (
+      <SubscriptionNotice
+        restaurantName={restaurant?.name ?? null}
+        status={subscription.status}
+        periodEnd={subscription.period_end}
+        trialEnd={subscription.trial_end}
       />
     );
   }

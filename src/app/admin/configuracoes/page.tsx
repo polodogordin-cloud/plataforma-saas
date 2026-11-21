@@ -18,6 +18,7 @@ import { listPlans } from "@/lib/data/admin";
 import { getProfile, getSessionUser } from "@/lib/data/restaurants";
 import { formatDate } from "@/lib/utils";
 import { formatPrice } from "@/lib/validation";
+import { PLAN_FEATURE_LABEL, type PlanFeatureKey } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Configurações" };
 export const dynamic = "force-dynamic";
@@ -46,6 +47,18 @@ export default async function AdminSettingsPage() {
       label: "Restaurantes",
       description: "Ativar, desativar e suspender casas",
       icon: Store,
+    },
+    {
+      href: "/admin/planos",
+      label: "Planos",
+      description: "Preço, limites e recursos de cada plano",
+      icon: CreditCard,
+    },
+    {
+      href: "/admin/assinaturas",
+      label: "Assinaturas",
+      description: "Plano, status e período de cada casa",
+      icon: CreditCard,
     },
     {
       href: "/app",
@@ -118,11 +131,14 @@ export default async function AdminSettingsPage() {
         <section className="card p-4">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-ink-900">
             <CreditCard className="size-4 text-ink-500" aria-hidden="true" />
-            Planos disponíveis
+            Planos na vitrine
           </h2>
           <p className="mt-1 text-xs text-ink-500">
-            Catálogo que a próxima etapa usa para assinatura e cobrança. Hoje o
-            plano é apenas um rótulo no restaurante.
+            Catálogo ativo. Preço, limites e recursos são editados em{" "}
+            <Link href="/admin/planos" className="font-semibold text-brand-700">
+              Planos
+            </Link>
+            .
           </p>
 
           <ul className="mt-3 space-y-2">
@@ -144,7 +160,7 @@ export default async function AdminSettingsPage() {
                         key={feature}
                         className="rounded-md bg-ink-50 px-1.5 py-0.5 text-[0.68rem] text-ink-600"
                       >
-                        {feature}
+                        {PLAN_FEATURE_LABEL[feature as PlanFeatureKey] ?? feature}
                       </li>
                     ))}
                   </ul>

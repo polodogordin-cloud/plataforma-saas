@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createProduct, updateProduct } from "@/actions/menu";
@@ -103,7 +104,24 @@ function ProductFormBody({ product, categories, defaultCategoryId, onClose }: Bo
     <form id="product-form" action={formAction} className="space-y-4" noValidate>
       {isEdit && <input type="hidden" name="productId" value={product!.id} />}
 
-      {state.message && !state.ok && <FormAlert tone="error">{state.message}</FormAlert>}
+      {/*
+        Erro do formulário (Etapa 11: inclui limite de plano). Quando a causa é
+        limite, a mensagem vem acompanhada do caminho para ver os planos — um
+        "não foi possível criar" repetido sem saída parece bug.
+      */}
+      {state.message && !state.ok && (
+        <FormAlert tone="error">
+          <span className="block">{state.message}</span>
+          {state.fieldErrors?.plan ? (
+            <Link
+              href="/planos"
+              className="tap-target -my-1 inline-flex min-h-11 items-center font-semibold underline"
+            >
+              Ver planos
+            </Link>
+          ) : null}
+        </FormAlert>
+      )}
 
       <Field
         label="Nome do produto"

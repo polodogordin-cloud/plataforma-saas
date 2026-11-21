@@ -20,7 +20,15 @@ detalhe do produto em tela cheia com quantidade. Nada de tela administrativa.
 Code e TAG NFC; o cliente monta o carrinho e pede; a equipe acompanha tudo em
 `/app/pedidos` sem recarregar.
 
-**Etapa 10 — painel master (atual).** Existem dois tipos de usuário e o banco
+**Etapa 11 — planos e assinaturas (atual).** O sistema virou SaaS comercial:
+cada casa tem plano, limites e período. Básico, Profissional e Premium com preço,
+recursos e limites **editáveis pelo admin** — nenhum número mora no código. O
+limitador é um trigger no banco: a mesa 51 é recusada mesmo por API, e a tela
+responde "Seu plano atingiu o limite de mesas" com o caminho para `/planos`.
+Trial configurável, assinatura com seis estados e camada de gateway pronta — sem
+nenhuma cobrança real nesta etapa.
+
+**Etapa 10 — painel master.** Existem dois tipos de usuário e o banco
 sabe disso: o **dono do restaurante**, que vê só a própria casa, e o
 **administrador da plataforma**, que entra em `/admin`, ativa, suspende e audita
 todas elas. Nenhum pode fazer o trabalho do outro — nem pela interface, nem por
@@ -593,6 +601,81 @@ automatizadas** — 58 de lógica/segurança, 62 de UI em jsdom, 25 de SSR.
 
 ---
 
+### Planos e assinaturas (Etapa 11)
+
+A pergunta que esta etapa responde não é "quanto custa", é **"quem decide que
+esta casa pode criar a mesa 51?"**. A resposta é o banco, e o desenho todo segue
+daí.
+
+| Objeto | Papel |
+| --- | --- |
+| `plans` | Catálogo: nome, descrição, preço, intervalo, `features` (jsonb), `limits` (jsonb), ativo, posição |
+| `subscriptions` | Histórico comercial: plano, status, período, trial, cancelamento, ids do gateway, **preço congelado** |
+| `platform_settings` | `trial_days` e `grace_days`, editáveis no painel |
+| `billing_events` | Caixa de entrada de webhooks (vazia até existir gateway) |
+| `enforce_plan_limit()` | Trigger que recusa o insert acima do limite |
+| `enforce_subscription_active()` | Trigger que recusa escrita com assinatura sem acesso |
+| `sync_restaurant_subscription()` | Espelha a assinatura corrente em `restaurants` |
+| `restaurant_usage` / `check_plan_limit` / `has_feature` | Aritmética única de uso, limite e recurso |
+| `my_subscription`, `public_plans` | Leitura do dono e vitrine pública |
+| `admin_save_plan`, `admin_toggle_plan`, `admin_set_subscription`, `admin_set_platform_setting`, `run_subscription_review` | Administração comercial |
+
+- **O limite mora no plano, nunca no código.** `plans.limits` tem chaves estáveis
+  (`max_products`, `max_tables`, `max_users`, `max_categories`,
+  `max_orders_month`). Mudar 50 para 80 no `/admin/planos` muda o que o banco
+  permite no próximo insert — sem deploy. Plano **sem** a chave é plano sem
+  limite; nunca é zero.
+- **Limite é trigger, não `check`.** Um `check` no insert não sabe quantas mesas
+  a casa já tem, e um `check` em `tables` não pode ler `plans` sem criar
+  dependência circular. O trigger consulta o plano e a contagem **na mesma
+  transação** e vale para qualquer caminho: Server Action, PostgREST direto ou
+  SQL na mão.
+- **A plataforma também não fura o limite.** O trigger não abre exceção para
+  admin global: se a plataforma precisa destravar um cliente, ela troca o plano
+  dele — decisão registrada na auditoria, não furo silencioso.
+- **Downgrade respeita o uso.** `change_plan` recusa cair para um plano cujo
+  limite já está estourado (`plan_downgrade_too_small`). Sem isso a casa ficaria
+  acima do próprio plano e o próximo insert falharia com erro de banco sem
+  explicação.
+- **Assinatura tem tabela própria e o restaurante guarda um espelho.**
+  `subscriptions` é o histórico (troca de plano, cancelamento, trial);
+  `restaurants.plan_id`/`subscription_state` é o atalho que a RLS, o layout e o
+  cardápio leem sem join. O trigger `sync_restaurant_subscription` é o **único**
+  lugar que escreve o espelho — e ele marca a transação para o guard não
+  confundir sincronização interna com o dono tentando trocar o próprio plano.
+- **Trial é derivado, não digitado.** Quem inicia o teste não escolhe a data
+  final: ela vem de `platform_settings.trial_days`. Casa nova ganha trial
+  automaticamente pelo trigger `restaurants_grant_trial`.
+- **Assinatura sem acesso tranca o painel, não o salão.** `expired`,
+  `cancelled` e `suspended` levam à tela de aviso com o caminho para `/planos`;
+  `past_due` continua entrando — casa em atraso está operando, e travar o salão
+  por uma fatura em processamento custa mais caro que a mensalidade. **Pedidos
+  nunca são bloqueados**: o cliente na mesa não tem culpa da cobrança.
+- **Gateway é contrato, não simulação.** `src/lib/billing` define
+  `PaymentProvider` com as seis funções do escopo (`createCustomer`,
+  `createSubscription`, `cancelSubscription`, `changePlan`,
+  `getSubscriptionStatus`, `handleWebhook`). O único provedor implementado é
+  `manual`, que é honesto: não chama rede, não inventa `sub_123`, devolve
+  `requiresProvider: true` e diz na tela que a cobrança não existe nesta versão.
+  Trocar de provedor é `PAYMENT_PROVIDER` no ambiente.
+- **A vitrine é pública e curva de comparação não existe.** `/planos` sai sem
+  sessão com cards **verticais**, um por linha no celular: nome, preço, recursos
+  com ✓ e "Começar agora". Tabela de seis colunas em 320px é ilegível — o escopo
+  proíbe, e a razão é boa.
+
+Verificação da etapa: **26 checagens SQL** no banco vivo, com um restaurante
+sintético criado e apagado na mesma transação (plano com 2 mesas → terceira
+recusada; produto acima do limite recusado; upgrade liberando insert; assinatura
+expirada, cancelada e suspensa bloqueando escrita; **pedido do cliente seguindo
+permitido**; RPC de admin recusando quem não é admin; preço e limite negativos
+recusados; revisão expirando trial e marcando atraso; auditoria registrando tudo)
+e **169 checagens automatizadas** — 72 de lógica, 56 de UI em jsdom e 41 de SSR.
+A suíte SQL também encontrou dois bugs reais, corrigidos na hora: `suspended`
+não estava na lista de bloqueio de escrita e apagar um restaurante com
+assinatura esbarrava no guard do plano.
+
+---
+
 ## Rotas
 
 | Rota                                  | Descrição                                       |
@@ -626,6 +709,10 @@ automatizadas** — 58 de lógica/segurança, 62 de UI em jsdom, 25 de SSR.
 | `/admin/pedidos`                      | Pedidos recentes de toda a plataforma           |
 | `/admin/auditoria`                    | Histórico de ações administrativas              |
 | `/admin/configuracoes`                | Conta da plataforma e catálogo de planos        |
+| `/planos`                             | **Vitrine pública de planos** (Etapa 11)        |
+| `/app/plano`                          | **Meu plano** — status, uso, limites e troca    |
+| `/admin/planos`                       | Catálogo: criar, editar, ativar, preço, limites |
+| `/admin/assinaturas`                  | Plano, status, período e trial de cada casa     |
 
 Fluxo principal: **cadastro → login automático → criar restaurante → dashboard**.
 O middleware do Supabase renova a sessão e exige login em `/app`,
@@ -650,7 +737,8 @@ src/
 │   ├── orders-panel.ts status, anotações e histórico (Etapa 7)
 │   ├── table-requests.ts fila de solicitações da mesa (Etapa 8)
 │   ├── theme.ts        tema do cardápio: salvar, resetar, upload (Etapa 9)
-│   └── admin.ts        painel master: status, cadastro, papéis (Etapa 10)
+│   ├── admin.ts        painel master: status, cadastro, papéis (Etapa 10)
+│   └── billing.ts      planos, trial, troca de plano e assinatura (Etapa 11)
 ├── app/
 │   ├── layout.tsx      metadata, viewport, manifest
 │   ├── page.tsx        landing
@@ -676,7 +764,9 @@ src/
 │   │                   TableSheet, QrSheet, QrPrintCard,
 │   │                   NfcPanel, NfcSheet, NfcTagSheet, NfcStatusBadge
 │   ├── admin/          Painel master: AdminNav, RestaurantList,
-│   │                   MembersSection, RestaurantEditForm, MetricCard
+│   │                   MembersSection, RestaurantEditForm, MetricCard,
+│   │                   PlanForm, PlanToggle, SubscriptionEditor (E11)
+│   ├── billing/        PlanCard, UsageMeter, PlanSwitcher (Etapa 11)
 │   ├── theme/          Editor de personalização: ThemeEditor, MenuPreview,
 │   │                   ColorField, ImagePicker
 │   └── ui/             Button, Field, Card, Badge, Sheet, Switch,
@@ -698,6 +788,8 @@ src/
 │   ├── table-request.ts disponibilidade/cooldown das solicitações (neutro)
 │   ├── notify.ts       som (WebAudio), vibração e preferência
 │   ├── realtime.ts     nomes dos canais de tempo real
+│   ├── plan-rules.ts   limites, uso e comparação de planos (neutro)
+│   ├── billing/        contrato de gateway de pagamento (Etapa 11)
 │   └── validation.ts   schemas Zod
 └── middleware.ts
 supabase/migrations/    schema aplicado via Supabase
@@ -712,6 +804,7 @@ supabase/migrations/    schema aplicado via Supabase
                         0009_table_requests.sql (Etapa 8)
                         0010_restaurant_theme.sql (Etapa 9)
                         0011_platform_admin.sql (Etapa 10)
+                        0012_plans_subscriptions.sql (Etapa 11)
 scripts/                auditoria de layout + teste de RLS
 ```
 
@@ -780,15 +873,15 @@ scripts/                auditoria de layout + teste de RLS
 | ~~8~~ | ~~Chamar garçom / pedir a conta~~ | ~~`table_requests` + barra do cardápio — **concluída**~~ |
 | ~~9~~ | ~~Personalização do cardápio~~  | ~~`restaurant_themes` + `/app/configuracoes/personalizacao` — **concluída**~~ |
 | ~~10~~ | ~~Painel master do administrador~~ | ~~`platform_admins` + `/admin` — **concluída**~~ |
-| 11    | Planos e assinaturas            | `plans` já existe; falta cobrança e limites         |
-| 12    | Publicação e produção           | domínios, observabilidade, cache                    |
+| ~~11~~ | ~~Planos e assinaturas~~        | ~~`plans`, `subscriptions`, limites por trigger — **concluída**~~ |
+| 12    | Cobrança real (gateway)         | `lib/billing` — Stripe/Mercado Pago/Asaas via `PAYMENT_PROVIDER` |
+| 13    | Publicação e produção           | domínios, observabilidade, cache                    |
 
 Pontos já preparados: o bucket de storage existe, o tema já é uma tabela por
-tenant (as próximas etapas podem acrescentar tipografia e layout sem tocar no
-que existe), o catálogo de planos e as colunas de assinatura já estão no
-restaurante — a Etapa 11 só precisa de cobrança e limites —, e a
-função `has_restaurant_role` aceita o array de papéis permitidos — ou seja, novos
-níveis de acesso não exigem reescrever policies.
+tenant, a função `has_restaurant_role` aceita o array de papéis permitidos (novos
+níveis de acesso não exigem reescrever policies) e a cobrança tem contrato
+pronto em `lib/billing` com `billing_events` no banco — ligar um gateway é
+implementar `PaymentProvider` e um endpoint de webhook, não reescrever regra.
 
 ---
 

@@ -58,10 +58,10 @@ const groups: { title: string; items: Item[] }[] = [
         icon: UserRound,
       },
       {
-        label: "Plano e assinatura",
-        description: "Compare planos e gerencie a cobrança",
+        href: "/app/plano",
+        label: "Meu plano",
+        description: "Plano atual, recursos e limites",
         icon: CreditCard,
-        badge: "Etapa 11",
       },
       {
         label: "Ajuda e suporte",
@@ -198,7 +198,7 @@ export default async function SettingsPage() {
         </form>
 
         <p className="pb-2 text-center text-xs text-ink-400">
-          Menuvo · versão 0.10.0 (Etapa 10)
+          Menuvo · versão 0.11.0 (Etapa 11)
         </p>
       </main>
     </>
