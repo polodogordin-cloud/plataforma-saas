@@ -6,6 +6,7 @@ import { AppHeader } from "@/components/app/app-header";
 import { TablesManager } from "@/components/tables/tables-manager";
 import { getActiveRestaurant } from "@/lib/data/restaurants";
 import { listTables } from "@/lib/data/tables";
+import { listNfcHistory, listRestaurantNfcTags } from "@/lib/data/nfc";
 
 export const metadata: Metadata = { title: "Mesas" };
 
@@ -13,9 +14,22 @@ export default async function TablesPage() {
   const restaurant = await getActiveRestaurant();
   if (!restaurant) redirect("/onboarding");
 
-  const tables = await listTables(restaurant.id);
+  const [tables, nfcTags] = await Promise.all([
+    listTables(restaurant.id),
+    listRestaurantNfcTags(restaurant.id),
+  ]);
   const canEdit = restaurant.role === "owner" || restaurant.role === "admin";
   const origin = await resolveOrigin();
+
+  /**
+   * Histórico por mesa, carregado só para as mesas que já têm TAG.
+   * São poucas consultas (uma por mesa com NFC) e cabem no cache do React.
+   */
+  const tablesWithTags = [...new Set(nfcTags.map((tag) => tag.table_id))];
+  const historyEntries = await Promise.all(
+    tablesWithTags.map(async (tableId) => [tableId, await listNfcHistory(tableId, 8)] as const),
+  );
+  const nfcHistory = Object.fromEntries(historyEntries);
 
   return (
     <>
@@ -46,6 +60,8 @@ export default async function TablesPage() {
           restaurantSlug={restaurant.slug}
           origin={origin}
           initialTables={tables}
+          nfcTags={nfcTags}
+          nfcHistory={nfcHistory}
           canEdit={canEdit}
         />
       </main>

@@ -235,6 +235,50 @@ usa deflate com blocos de Huffman fixos — um PNG "stored" do mesmo código ter
 
 ---
 
+### NFC das mesas (Etapa 5)
+
+A TAG NFC **não tem URL própria**: ela grava a mesma URL pública do QR Code,
+`/r/{slug}/table/{public_token}`. QR e TAG são dois meios de abrir a mesma coisa.
+
+Isso tem consequência prática — mudar preço, foto ou o cardápio inteiro não
+exige reimprimir o QR **nem regravar a TAG**. Só a rotação de token muda a URL.
+
+| Objeto | Papel |
+| --- | --- |
+| `public.table_nfc_tags` | uma linha por TAG física (várias por mesa permitidas) |
+| `public.table_nfc_events` | histórico append-only, escrito por trigger |
+| `public.table_nfc_overview` | TAG + `nfc_url` calculada + `needs_rerecord` |
+| `tables.token_rotated_at` | marca as TAGs que apontam para URL morta |
+
+- **`nfc_url` é calculada, nunca armazenada.** Guardar a URL em coluna criaria
+  uma segunda cópia de (slug, token) que envelhece sozinha quando o slug muda
+  ou o token rotaciona. A view resolve sempre a partir dos dados atuais.
+- **O navegador não grava a TAG** — e a interface diz isso com essas palavras.
+  Web NFC só existe em Chrome Android e não é padrão; mesmo lá o usuário precisa
+  encostar o celular na TAG. Quem grava é um app dedicado (NFC Tools, TagWriter).
+  A Menuvo entrega a URL pronta, registra o estado e o histórico.
+- **Quatro estados:** não configurado, configurado, testado, desativado. E um
+  aviso derivado que é o mais útil de todos: **"precisa regravar"**, quando a TAG
+  foi configurada antes da última rotação de token. Mostrar "Configurado" ali
+  seria mentira útil — o cliente encostaria o celular e cairia em erro.
+- **UID opcional.** O identificador físico da TAG nunca é obrigatório: cada app
+  de gravação mostra (ou não) esse dado num lugar diferente, e exigir isso
+  travaria a maioria dos casos.
+- **Histórico não some.** `table_nfc_events.tag_id` é `ON DELETE SET NULL`, não
+  `CASCADE`: excluir a TAG preserva a auditoria.
+- **Substituição com encadeamento:** a TAG nova nasce com `replaced_tag_id`
+  apontando para a antiga, que é desativada em vez de apagada. É o mesmo modelo
+  que atende várias TAGs por mesa, troca de TAG e QR + NFC na mesma placa.
+- **Isolamento:** `anon` não alcança nada de NFC. Um trigger garante que a TAG
+  pertence ao mesmo restaurante da mesa, fechando o caso de `restaurant_id`
+  próprio + `table_id` de outro tenant.
+
+Preparação (sem implementar): várias TAGs por mesa, substituição, histórico,
+identificação, ativação/desativação e QR + NFC na mesma placa já funcionam.
+Pedidos e pagamentos seguem fora de escopo.
+
+---
+
 ---
 
 ## Rotas
@@ -255,6 +299,7 @@ usa deflate com blocos de Huffman fixos — um PNG "stored" do mesmo código ter
 | `/r/[slug]/table/[token]`             | **Cardápio aberto pelo QR/NFC da mesa**         |
 | `/app/mesas`                          | Mesas: cartões, ativar/desativar, QR (Etapa 4)  |
 | `/app/mesas/[id]/qr`                  | Download do QR (`?format=png` ou `?format=svg`) |
+| `/app/mesas` (sheet NFC)              | TAGs da mesa: URL, status, histórico (Etapa 5)  |
 | `/sitemap.xml`, `/robots.txt`         | Indexação — só cardápios publicados             |
 | `/app/pedidos`                        | Pedidos — Etapa 6/7                             |
 | `/app/configuracoes`                  | Hub de configurações                            |
@@ -292,7 +337,8 @@ src/
 │   ├── public/         Cardápio do cliente: PublicHeader, PublicMenuView,
 │   │                   ProductRow, ProductDetail, TableBadge
 │   ├── tables/         Painel de mesas: TablesManager, TableCard,
-│   │                   TableSheet, QrSheet, QrPrintCard
+│   │                   TableSheet, QrSheet, QrPrintCard,
+│   │                   NfcPanel, NfcSheet, NfcTagSheet, NfcStatusBadge
 │   └── ui/             Button, Field, Card, Badge, Sheet, Switch,
 │                       ConfirmSheet, ComingSoon…
 ├── lib/
@@ -303,6 +349,7 @@ src/
 │   ├── opening-hours.ts horário de funcionamento (fuso, meia-noite)
 │   ├── qr.ts           gerador de QR Code (matriz, PNG, SVG) sem dependências
 │   ├── table-session.ts cookie de contexto da mesa (QR/NFC)
+│   ├── nfc.ts          resumo de TAGs por mesa (módulo neutro, uso no cliente)
 │   └── validation.ts   schemas Zod
 └── middleware.ts
 supabase/migrations/    schema aplicado via Supabase
@@ -310,6 +357,8 @@ supabase/migrations/    schema aplicado via Supabase
                         0002_menu_categories_products.sql (Etapa 2)
                         0003_public_menu.sql (Etapa 3)
                         0004_tables_qr.sql (Etapa 4)
+                        0005_table_nfc.sql (Etapa 5)
+                        0006_nfc_stale_and_replaced.sql (correções da Etapa 5)
 scripts/                auditoria de layout + teste de RLS
 ```
 
@@ -333,6 +382,11 @@ scripts/                auditoria de layout + teste de RLS
   tela; no papel só existe o cartão da mesa (com `@page A4`), jamais o painel.
 - **Identidade pública opaca**: o que o cliente vê na URL nunca é o número da
   mesa nem o `id` do banco, mas um token que o dono pode rotacionar.
+- **Uma URL por mesa, dois meios**: QR Code e TAG NFC apontam para o mesmo
+  endereço. Nada de "link de NFC" separado para manter em sincronia.
+- **Nada que o navegador não faz**: a interface nunca promete gravar TAG NFC.
+  Ela entrega a URL, registra o que foi gravado e avisa quando a gravação
+  ficou velha.
 
 ---
 
