@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { safeRedirectPath } from "@/lib/env";
 
 /**
  * Renova a sessão do Supabase em cada requisição e protege rotas privadas.
@@ -53,17 +54,18 @@ export async function updateSession(request: NextRequest) {
   if (!user && isPrivate) {
     const url = request.nextUrl.clone();
     url.pathname = "/entrar";
-    url.searchParams.set("next", pathname);
+    // Só caminho interno: `next` volta para o usuário depois do login e não
+    // pode servir de trampolim para outro domínio.
+    url.searchParams.set("next", safeRedirectPath(pathname, "/app"));
     return NextResponse.redirect(url);
   }
 
   // Já logado não precisa ver login/cadastro
   if (user && isAuthPage) {
     const url = request.nextUrl.clone();
+    const next = safeRedirectPath(request.nextUrl.searchParams.get("next"), "/app");
     // Quem veio de /admin volta para /admin depois do login.
-    url.pathname = request.nextUrl.searchParams.get("next")?.startsWith("/admin")
-      ? "/admin"
-      : "/app";
+    url.pathname = next.startsWith("/admin") ? next : "/app";
     url.search = "";
     return NextResponse.redirect(url);
   }

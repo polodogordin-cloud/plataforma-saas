@@ -1,14 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { Search, X, SearchX } from "lucide-react";
 import { ProductRow } from "@/components/public/product-row";
-import { ProductDetail } from "@/components/public/product-detail";
 import { FeaturedStrip } from "@/components/public/public-header";
 import { CartProvider, useCart } from "@/components/public/cart-provider";
 import { TableActionsBar } from "@/components/public/table-actions-bar";
-import { TableRequestSheet } from "@/components/public/table-request-sheet";
-import { CartSheet } from "@/components/public/cart-sheet";
 import {
   OrderSuccess,
   lastOrderStorageKey,
@@ -27,6 +25,39 @@ import type {
   TableRequestType,
 } from "@/lib/types";
 import { cn, normalizeSearch } from "@/lib/utils";
+
+/*
+ * ─── Code splitting dos painéis (Etapa 14) ───────────────────────────────
+ *
+ * Os três sheets — detalhe do produto, carrinho e chamar garçom — só aparecem
+ * depois de um toque. Carregá-los no bundle inicial significa mandar para o
+ * celular do cliente, no 3G do salão, código que talvez ele nunca use: o
+ * carrinho sozinho importa a action de pedido, formatação de preço e o sheet
+ * genérico.
+ *
+ * Com `dynamic` eles viram chunks separados, baixados no primeiro toque. O
+ * HTML do cardápio continua renderizado no servidor — o que muda é só o
+ * JavaScript de interação.
+ *
+ * `ssr: false` nos três porque nenhum deles tem conteúdo para o primeiro
+ * paint: todos começam fechados (`open` controlado por estado do cliente).
+ * Renderizá-los no servidor produziria HTML de uma tela que o visitante não
+ * vê.
+ */
+const ProductDetail = dynamic(
+  () => import("@/components/public/product-detail").then((m) => m.ProductDetail),
+  { ssr: false },
+);
+
+const CartSheet = dynamic(
+  () => import("@/components/public/cart-sheet").then((m) => m.CartSheet),
+  { ssr: false },
+);
+
+const TableRequestSheet = dynamic(
+  () => import("@/components/public/table-request-sheet").then((m) => m.TableRequestSheet),
+  { ssr: false },
+);
 
 /** Distância do topo considerada "categoria atual" (capa + abas fixas). */
 const SCROLL_OFFSET = 96;

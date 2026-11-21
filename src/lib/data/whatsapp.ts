@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
 import {
   EMPTY_WHATSAPP_CONFIG,
   normalizeWhatsappConfig,
@@ -55,7 +56,7 @@ export const getPublicWhatsappConfig = cache(
   async (slug: string): Promise<WhatsappConfig | null> => {
     if (!slug) return null;
 
-    const supabase = await createClient();
+    const supabase = createPublicClient();
     const { data, error } = await supabase.rpc("public_whatsapp_config", {
       p_slug: slug,
     });

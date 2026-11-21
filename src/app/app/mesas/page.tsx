@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { ShieldAlert } from "lucide-react";
 import { AppHeader } from "@/components/app/app-header";
@@ -10,6 +9,7 @@ import { listNfcHistory, listRestaurantNfcTags } from "@/lib/data/nfc";
 import { getMySubscription } from "@/lib/data/billing";
 import { isLimitReached } from "@/lib/plan-rules";
 import { LimitReachedNotice } from "@/components/billing/usage-meter";
+import { requireRequestOrigin } from "@/lib/site";
 
 export const metadata: Metadata = { title: "Mesas" };
 
@@ -89,24 +89,10 @@ export default async function TablesPage() {
  * Origem pública para montar o link da mesa.
  *
  * O QR Code precisa de URL absoluta (o celular do cliente não tem contexto do
- * painel). Em produção usamos o host que atendeu a requisição, respeitando o
- * proxy da Vercel; em desenvolvimento, o próprio localhost.
+ * painel). A conta mora em `lib/site` — a mesma função usada pelo `canonical`
+ * e pelo sitemap, para que o QR impresso e o endereço indexado nunca
+ * divirjam.
  */
 async function resolveOrigin(): Promise<string> {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL;
-
-  try {
-    const headerList = await headers();
-    const host = headerList.get("x-forwarded-host") ?? headerList.get("host");
-    const proto = headerList.get("x-forwarded-proto") ?? "https";
-
-    if (host && !host.includes("localhost") && !host.startsWith("127.0.0.1")) {
-      return `${proto}://${host}`;
-    }
-    if (host) return `${proto === "http" ? "http" : "https"}://${host}`;
-  } catch {
-    // Sem headers (contexto estático): cai na configuração.
-  }
-
-  return (configured ?? "https://menuvo.app").replace(/\/$/, "");
+  return requireRequestOrigin();
 }

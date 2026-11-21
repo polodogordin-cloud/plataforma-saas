@@ -3,6 +3,7 @@ import { getActiveRestaurant } from "@/lib/data/restaurants";
 import { getTable } from "@/lib/data/tables";
 import { toUuidOrNull } from "@/lib/validation";
 import { qrToPng, qrToSvg } from "@/lib/qr";
+import { resolveSiteOrigin } from "@/lib/env";
 
 /**
  * Download do QR Code de uma mesa.
@@ -72,17 +73,19 @@ export async function GET(
   });
 }
 
-/** Origem pública, respeitando proxy da Vercel. */
+/**
+ * Origem pública do QR.
+ *
+ * `NEXT_PUBLIC_SITE_URL` ganha do header: um QR impresso precisa apontar para o
+ * domínio próprio, não para o host interno que atendeu o download (preview,
+ * IP da VPS). Só quando a variável não existe é que o header responde.
+ */
 function resolveOrigin(request: NextRequest): string {
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? null;
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? null;
 
-  if (forwardedHost) return `${forwardedProto}://${forwardedHost}`;
-
-  const configured = process.env.NEXT_PUBLIC_SITE_URL;
-  if (configured && !configured.includes("localhost")) {
-    return configured.replace(/\/$/, "");
-  }
-
-  return request.nextUrl.origin;
+  return (
+    resolveSiteOrigin({ requestHost: forwardedHost, requestProto: forwardedProto }) ??
+    request.nextUrl.origin
+  );
 }

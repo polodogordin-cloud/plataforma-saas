@@ -5,12 +5,18 @@ import { MenuUnavailable } from "@/components/public/menu-unavailable";
 import { PublicHeader } from "@/components/public/public-header";
 import { PublicMenuView } from "@/components/public/public-menu";
 import { ThemeScope } from "@/components/public/themed";
-import { getPublicMenu, getPublicRestaurant, getPublicRestaurantState } from "@/lib/data/public-menu";
+import {
+  getPublicMenu,
+  getPublicRestaurant,
+  getPublicRestaurantState,
+  listPublishedSlugs,
+} from "@/lib/data/public-menu";
 import { getPublicRestaurantTheme } from "@/lib/data/theme";
 import { getPublicWhatsappConfig } from "@/lib/data/whatsapp";
 import { WhatsappButton } from "@/components/public/whatsapp-button";
 import { describeWeek, readOpeningHours } from "@/lib/opening-hours";
 import { getRestaurantTimezone } from "@/lib/data/timezone";
+import { metadataBaseUrl } from "@/lib/site";
 
 type Params = { slug: string };
 
@@ -24,6 +30,35 @@ type Params = { slug: string };
  * sem custar uma consulta por visitante.
  */
 export const revalidate = 60;
+
+/**
+ * ─── Por que `generateStaticParams` existe aqui (Etapa 14) ────────────────
+ *
+ * Sem ele, `revalidate` **não tem efeito**: uma rota com parâmetro dinâmico que
+ * não declara nenhum caminho não tem o que pré-renderizar, e o Next a trata
+ * como dinâmica (`ƒ`) — HTML gerado a cada visita, uma consulta ao banco por
+ * cliente. Foi medido: com esta função a rota passa a `●` (ISR), revalidando a
+ * cada 60 s.
+ *
+ * É também o que torna o `createPublicClient` (cliente sem cookies) útil: ele
+ * removeu o impedimento técnico, mas quem manda o Next pré-renderizar é esta
+ * declaração.
+ *
+ * Lista os cardápios **publicados no momento do build**. Casa que publicar
+ * depois entra na primeira visita (geração sob demanda) e passa a ser cacheada
+ * igual. Casa despublicada sai do cache no próximo `revalidate`.
+ *
+ * Falha de banco aqui não derruba o build: sem lista, a rota volta a ser
+ * dinâmica, que é o comportamento anterior — degradar é melhor que não subir.
+ */
+export async function generateStaticParams(): Promise<Array<{ slug: string }>> {
+  try {
+    const slugs = await listPublishedSlugs();
+    return slugs.map((row) => ({ slug: row.slug }));
+  } catch {
+    return [];
+  }
+}
 
 export async function generateMetadata({
   params,
@@ -40,25 +75,85 @@ export async function generateMetadata({
     };
   }
 
+  /*
+   * `title` curto porque o template do layout raiz já acrescenta "· Menuvo" —
+   * repetir o nome da plataforma come o espaço que o nome do restaurante
+   * precisa no resultado de busca, que é o que o cliente procura.
+   */
   const title = `${restaurant.name} · Cardápio`;
-  const description =
-    restaurant.description ??
-    `Veja o cardápio de ${restaurant.name} e escolha o que pedir.`;
+  const description = buildDescription(restaurant);
+
+  /*
+   * ─── Por que `metadataBase` e não `headers()` ─────────────────────────
+   *
+   * `og:url` e `og:image` precisam de URL absoluta: quem lê essas tags é o
+   * WhatsApp, o Instagram ou o Google, que não têm como resolver um caminho.
+   *
+   * O caminho óbvio seria ler o host da requisição com `headers()`. Foi o que
+   * eu fiz primeiro — e o `npm run build` denunciou o custo: a rota passou a
+   * `ƒ Dynamic`, e o cardápio perdeu o ISR. Em salão cheio, isso é uma
+   * consulta ao banco por cliente em vez de uma por minuto.
+   *
+   * `metadataBase` resolve a mesma coisa **em tempo de build**, a partir de
+   * `NEXT_PUBLIC_SITE_URL`, e o Next monta as URLs absolutas sozinho. Em
+   * preview/staging a variável aponta para o domínio daquele ambiente.
+   */
+  const path = `/r/${restaurant.slug}`;
 
   return {
+    metadataBase: metadataBaseUrl(),
     title,
     description,
-    alternates: { canonical: `/r/${restaurant.slug}` },
+    alternates: { canonical: path },
     openGraph: {
       type: "website",
+      siteName: "Menuvo",
+      locale: "pt_BR",
       title,
       description,
-      url: `/r/${restaurant.slug}`,
-      images: restaurant.logo_url ? [{ url: restaurant.logo_url }] : undefined,
+      url: path,
+      images: restaurant.logo_url
+        ? [{ url: restaurant.logo_url, alt: `Logo de ${restaurant.name}` }]
+        : undefined,
     },
-    twitter: { card: "summary_large_image", title, description },
+    twitter: {
+      card: restaurant.logo_url ? "summary_large_image" : "summary",
+      title,
+      description,
+      images: restaurant.logo_url ? [restaurant.logo_url] : undefined,
+    },
+    // Sem `robots` aqui: o cardápio publicado deve ser indexado (é o que traz
+    // cliente novo pelo Google). Quem some do índice é o 404 e a página de
+    // casa suspensa, tratados nos próprios arquivos.
   };
 }
+
+/**
+ * Descrição para busca e compartilhamento.
+ *
+ * Sai de campos que o dono já publica (`description`, cidade). Nada de dado
+ * interno: telefone de contato, plano, e-mail da conta ou id. O `description`
+ * do restaurante é conteúdo público do cardápio — o que não é público é o
+ * `settings`, que nunca é lido aqui.
+ */
+function buildDescription(restaurant: {
+  name: string;
+  description?: string | null;
+  city?: string | null;
+  state?: string | null;
+}): string {
+  const base =
+    restaurant.description?.trim() ||
+    `Veja o cardápio de ${restaurant.name} e escolha o que pedir.`;
+
+  const where = [restaurant.city, restaurant.state].filter(Boolean).join(" · ");
+  const suffix = where ? ` ${where}.` : "";
+
+  // Meta description acima de ~160 caracteres é cortada no resultado de busca.
+  const composed = `${base}${suffix}`;
+  return composed.length > 160 ? `${composed.slice(0, 157).trimEnd()}…` : composed;
+}
+
 
 export default async function PublicMenuPage({ params }: { params: Promise<Params> }) {
   const { slug } = await params;

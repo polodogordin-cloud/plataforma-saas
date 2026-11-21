@@ -1,0 +1,254 @@
+# Ambientes, domínio e deploy
+
+Documento interno. Explica **o que configurar e por quê**; não contém valor de
+segredo nenhum. Para os valores reais, o lugar é o painel da Vercel (Settings →
+Environment Variables) e o cofre de senhas do time.
+
+---
+
+## 1. Os três ambientes
+
+| | development | staging | production |
+| --- | --- | --- | --- |
+| Onde roda | máquina do dev | preview da Vercel / branch | domínio próprio |
+| `NEXT_PUBLIC_APP_ENV` | `development` | `staging` | `production` |
+| Banco | projeto Supabase de dev (ou o mesmo, com dados fictícios) | **o mesmo de produção** (não há banco separado ainda) | produção |
+| HSTS | não | **não** | sim |
+| `www.` → apex | não | não | sim |
+| Indexação (`robots.txt`) | livre | `Disallow: /` recomendado | livre |
+| Dados reais de cliente | **nunca** | evitar | sim |
+
+### Por que `NEXT_PUBLIC_APP_ENV` existe
+
+A Vercel roda **staging com `NODE_ENV=production`**. Sem uma variável explícita,
+um deploy de preview se comportaria como produção: mandaria `Strict-Transport-Security`
+com `includeSubDomains` e redirecionaria `www`. HSTS é uma promessa de um ano que
+o navegador guarda — num domínio de teste que ainda não tem todos os subdomínios
+em HTTPS, isso tranca o time fora.
+
+`resolveAppEnv()` (em `src/lib/env.ts`) lê essa variável primeiro e só cai em
+`NODE_ENV` quando ela está vazia.
+
+### Staging compartilha o banco de produção
+
+Isso é uma dívida consciente, não um descuido: o projeto Supabase está no plano
+gratuito e não há branch de banco. Consequência prática:
+
+- **nunca** rodar migration destrutiva a partir de um preview;
+- **nunca** testar exclusão em staging usando o restaurante de um cliente;
+- um bug de escrita em staging aparece em produção.
+
+Quando houver orçamento, o caminho é `supabase branches` ou um segundo projeto —
+e aí `NEXT_PUBLIC_SUPABASE_URL` passa a variar por ambiente, que é exatamente
+para isso que ela já vem de variável.
+
+---
+
+## 2. Variáveis de ambiente
+
+Obrigatórias estão marcadas. O restante tem padrão de fallback e o app sobe sem
+elas — mas o `/api/health` mostra cada uma como `missing`.
+
+| Variável | Obrigatória | Pública? | Para que serve |
+| --- | --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | sim | sim | Endpoint do Supabase. Vai no bundle. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | sim | sim | Chave anon. Protegida por RLS, não por segredo. |
+| `NEXT_PUBLIC_SITE_URL` | em produção | sim | Base de QR Code, `canonical`, sitemap e e-mails. |
+| `NEXT_PUBLIC_APP_ENV` | em staging | sim | Distingue staging de produção. |
+| `TRUSTED_EXTRA_HOSTS` | não | não | Hosts extras aceitos ao montar URL pública. |
+| `HEALTH_CHECK_SECRET` | não | não | Protege `/api/health` com Bearer token. |
+| `PAYMENT_PROVIDER` | não | não | Reservado. Nenhum gateway implementado. |
+| `WHATSAPP_PROVIDER` | não | não | Reservado. Ausente = link `wa.me`. |
+
+### A `service_role` não é usada
+
+Todo acesso a dados passa pela chave `anon` + cookies de sessão, e portanto por
+RLS. A `service_role` ignora RLS: usá-la em qualquer lugar do app transformaria
+um bug de consulta em vazamento entre restaurantes. Se ela aparecer numa
+variável `NEXT_PUBLIC_*`, é incidente — `NEXT_PUBLIC_` vai para o navegador.
+
+### Como o app descobre o próprio domínio
+
+`src/lib/env.ts` → `resolveSiteOrigin()`:
+
+1. `NEXT_PUBLIC_SITE_URL`, se válida;
+2. o host da requisição, **se confiável** (domínio configurado, `*.vercel.app`,
+   localhost ou `TRUSTED_EXTRA_HOSTS`);
+3. nada — e o chamador decide.
+
+O passo 2 existe para que esquecer a variável não gere um QR Code apontando para
+`menuvo.app`. O passo 3 existe porque devolver um domínio que não é o nosso é
+pior que devolver nada: QR Code errado só se descobre impresso.
+
+---
+
+## 3. Banco de dados
+
+- **Projeto**: Supabase, região `sa-east-1` (São Paulo).
+- **Migrations**: `supabase/migrations/*.sql`, aplicadas **em ordem**. Algumas
+  foram aplicadas direto pelo painel nas etapas iniciais; o diretório é a fonte
+  de verdade a partir da `0014`.
+- **Verificar pendências**:
+
+  ```sql
+  select version from supabase_migrations.schema_migrations order by version;
+  ```
+
+- **Nada de `service_role` no app.** As RPCs `security definer` são a única
+  fronteira que ignora RLS, e todas chamam `is_platform_admin()`,
+  `is_restaurant_admin()` ou validam um token antes de fazer qualquer coisa.
+
+### Ao criar migration nova
+
+1. arquivo `NNNN_nome.sql` em `supabase/migrations/`;
+2. testar num branch de banco ou à mão em transação;
+3. aplicar com `create_migration` (MCP) ou `supabase db push`;
+4. rodar os testes de RLS (`scripts/` e os harnesses em `.arena-test/`);
+5. só depois abrir PR.
+
+---
+
+## 4. Storage
+
+Bucket público `restaurant-assets`, servido por
+`https://<ref>.supabase.co/storage/v1/object/public/**`.
+
+- **Logo, capa, foto de produto**: leitura pública, escrita só pelo dono
+  (policy por `restaurant_id` no path).
+- O `next.config.ts` libera **apenas** esse caminho em `images.remotePatterns` —
+  domínio de terceiro não é aceito, o que evita o Next virar proxy de imagem
+  para qualquer URL.
+- Upload de tema passa por validação no cliente (`src/lib/theme-upload.ts`:
+  tipo, dimensão, tamanho) **e** a policy do bucket. Validação de cliente é
+  conveniência; a que vale é a do servidor.
+
+---
+
+## 5. Autenticação
+
+Supabase Auth, e-mail + senha.
+
+- Sessão em cookie `HttpOnly`, renovada pelo middleware em cada requisição.
+- **Redirect URLs** precisam estar cadastradas no Supabase (Authentication →
+  URL Configuration). Para cada ambiente:
+
+  ```
+  https://<domínio>/auth/callback
+  http://localhost:3000/auth/callback
+  https://*-<time>.vercel.app/auth/callback   (previews)
+  ```
+
+  Faltando a URL, o link de confirmação/recuperação abre numa página de erro do
+  Supabase — e o sintoma parece "o e-mail não chegou".
+
+- **Rate limiting**: `src/lib/rate-limit.ts` conta por IP em memória do
+  processo. Ver a nota de limitação no topo do arquivo: é limite de rajada, não
+  de cota. Para garantia, plugar Redis atrás da mesma interface.
+- O primeiro administrador da plataforma é criado por
+  `claim_first_platform_admin()` — só funciona para o usuário mais antigo e só
+  se ainda não existir nenhum. Depois disso, papéis são geridos em `/admin`.
+
+---
+
+## 6. Deploy
+
+Plataforma atual: **Vercel**, projeto `menuvo`, região `gru1` (São Paulo).
+
+```
+git push origin main  →  build automático  →  produção
+git push (outra branch)  →  preview com URL própria
+```
+
+- Build: `npm run build` (Next 15, App Router).
+- Nenhum comando de migration roda no build — **de propósito**. Um build que
+  altera schema é um build que não pode ser revertido com segurança.
+- Variáveis por ambiente: Settings → Environment Variables, com escopo
+  `Production` / `Preview` / `Development` separado.
+
+### Outra infraestrutura (VPS, Railway, Fly, Docker)
+
+A aplicação é Node padrão, sem dependência exclusiva da Vercel:
+
+```bash
+npm ci
+npm run build
+NEXT_PUBLIC_SITE_URL=https://seu-dominio.com.br npm start   # porta 3000
+```
+
+Atrás de proxy, é preciso encaminhar `X-Forwarded-Proto` e `X-Forwarded-Host` —
+o app depende deles para montar URL https e aceitar o host como confiável.
+
+---
+
+## 7. Domínio próprio
+
+1. **Apontar DNS** — na Vercel: Settings → Domains → adicionar
+   `cardapio.seudominio.com.br`, e criar o CNAME que o painel informar.
+2. **`NEXT_PUBLIC_SITE_URL`** = `https://cardapio.seudominio.com.br`
+   (com `https`, sem barra no final) no escopo Production.
+3. **Redeploy** — a variável entra no build; sem redeploy, o `canonical` e o
+   QR Code continuam com o valor anterior.
+4. **HTTPS**: a Vercel emite o certificado automaticamente ao validar o DNS.
+5. **`www`**: com o domínio configurado, o middleware redireciona
+   `www.<domínio>` → `<domínio>` em 308. Isso vale só para o domínio próprio —
+   nunca para `*.vercel.app`, senão um preview redirecionaria para fora.
+6. **Supabase**: adicionar o domínio em Authentication → URL Configuration
+   (Site URL e Redirect URLs), senão login por e-mail quebra.
+
+### Checklist de domínio
+
+- [ ] DNS aponta e o certificado foi emitido
+- [ ] `NEXT_PUBLIC_SITE_URL` atualizado + redeploy
+- [ ] `/r/<slug>` abre pelo domínio novo com HTTPS
+- [ ] QR Code baixado do painel aponta para o domínio novo
+- [ ] `https://<domínio>/robots.txt` e `/sitemap.xml` com o domínio novo
+- [ ] Supabase Auth com o domínio nas Redirect URLs
+- [ ] `www.` redireciona para o apex
+- [ ] `http://` redireciona para `https://` (ou é bloqueado pelo proxy)
+
+---
+
+## 8. PWA
+
+- Manifest: `src/app/manifest.webmanifest/route.ts` (gerado de `src/lib/pwa.ts`).
+- Service worker: `src/sw-source.js` → servido em `/sw.js` com
+  `Cache-Control: max-age=0, must-revalidate`.
+- **Trocar domínio invalida a instalação**: o escopo do PWA é a origem. Quem
+  instalou em `menuvo-theta.vercel.app` precisa instalar de novo no domínio
+  próprio. Avisar antes de trocar.
+- Ícones: `scripts/generate-icons.mjs` a partir de `public/icons/`. Rodar depois
+  de mexer na marca.
+
+---
+
+## 9. Diagnóstico rápido
+
+```bash
+curl -s https://<domínio>/api/health | jq
+```
+
+Sem `HEALTH_CHECK_SECRET`, a resposta é mínima (`ok`, `env`). Com o segredo:
+
+```bash
+curl -s -H "Authorization: Bearer $HEALTH_CHECK_SECRET" https://<domínio>/api/health | jq
+```
+
+Resposta esperada em dia:
+
+```json
+{ "ok": true, "env": "production", "database": "up",
+  "envVars": [{ "name": "NEXT_PUBLIC_SUPABASE_URL", "state": "set" }, ...] }
+```
+
+Se `database` for `"down"`, o campo `databaseError` classifica:
+
+| valor | significa |
+| --- | --- |
+| `unconfigured` | falta URL ou chave anon |
+| `auth_rejected` | URL/chave certas, mas o Supabase recusou (chave rotacionada?) |
+| `rpc_missing` | banco acessível, migration não aplicada |
+| `query_failed` | banco respondeu erro |
+| `unreachable` | DNS/TLS/timeout — rede do processo até o Supabase |
+
+O endpoint **nunca** devolve valor de variável, URL do banco ou mensagem crua do
+Postgres: só estado.

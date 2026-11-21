@@ -165,6 +165,7 @@ check(
       alias: {
         "@": path.join(ROOT, "src"),
         "@/lib/supabase/server": path.join(__dirname, "stubs-whatsapp/supabase-server.ts"),
+        "@/lib/supabase/public": path.join(__dirname, "stubs-whatsapp/supabase-public.ts"),
         "server-only": path.join(__dirname, "stubs-whatsapp/server-only.cjs"),
         react: path.join(__dirname, "stubs-whatsapp/react.cjs"),
       },

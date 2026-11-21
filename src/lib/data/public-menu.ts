@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
 import type {
   PublicCategory,
   PublicMenu,
@@ -32,7 +32,7 @@ export function normalizeSlug(value: string): string {
 export const getPublicRestaurant = cache(
   async (slug: string): Promise<PublicRestaurant | null> => {
     if (!slug) return null;
-    const supabase = await createClient();
+    const supabase = createPublicClient();
     const { data, error } = await supabase
       .from("public_restaurants")
       .select("id, name, slug, logo_url, description, city, state, currency, status, settings")
@@ -56,7 +56,7 @@ export const getPublicRestaurant = cache(
  */
 export const getPublicRestaurantState = cache(async (slug: string): Promise<string | null> => {
   if (!slug) return null;
-  const supabase = await createClient();
+  const supabase = createPublicClient();
   const { data, error } = await supabase.rpc("public_restaurant_state", {
     p_slug: normalizeSlug(slug),
   });
@@ -71,7 +71,7 @@ export const getPublicRestaurantState = cache(async (slug: string): Promise<stri
  * Categorias sem produtos ficam de fora (não faz sentido abrir uma seção vazia).
  */
 export const getPublicMenu = cache(async (restaurantId: string): Promise<PublicMenu> => {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
 
   const [{ data: categories }, { data: products }] = await Promise.all([
     supabase
@@ -124,7 +124,7 @@ export const getPublicMenu = cache(async (restaurantId: string): Promise<PublicM
 export async function listPublishedSlugs(): Promise<
   Array<{ slug: string; updated_at: string | null }>
 > {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
   const { data } = await supabase
     .from("public_restaurants")
     .select("slug")
