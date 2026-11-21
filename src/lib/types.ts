@@ -1130,5 +1130,14 @@ export type BillingSummary = {
 /** Vitrine pública de `/planos`. */
 export type PublicPlansPayload = {
   trial_days: number;
+  /**
+   * Plano concedido durante o teste gratuito.
+   *
+   * Vem do banco (`trial_plan`), não do código: o teste é dado no plano pago
+   * mais barato, nunca no mais caro — senão o cliente começa no topo de graça e
+   * pode terminar o teste acima dos limites do plano que conseguiria pagar.
+   * Vazio quando não há plano comercial ativo.
+   */
+  trial_plan_id: string | null;
   plans: PlanCatalogEntry[];
 };

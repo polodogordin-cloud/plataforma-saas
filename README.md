@@ -611,7 +611,7 @@ daí.
 | --- | --- |
 | `plans` | Catálogo: nome, descrição, preço, intervalo, `features` (jsonb), `limits` (jsonb), ativo, posição |
 | `subscriptions` | Histórico comercial: plano, status, período, trial, cancelamento, ids do gateway, **preço congelado** |
-| `platform_settings` | `trial_days` e `grace_days`, editáveis no painel |
+| `platform_settings` | `trial_days`, `grace_days` e `trial_plan_id`, editáveis no painel |
 | `billing_events` | Caixa de entrada de webhooks (vazia até existir gateway) |
 | `enforce_plan_limit()` | Trigger que recusa o insert acima do limite |
 | `enforce_subscription_active()` | Trigger que recusa escrita com assinatura sem acesso |
@@ -646,6 +646,15 @@ daí.
 - **Trial é derivado, não digitado.** Quem inicia o teste não escolhe a data
   final: ela vem de `platform_settings.trial_days`. Casa nova ganha trial
   automaticamente pelo trigger `restaurants_grant_trial`.
+- **O teste é concedido no plano pago mais barato, e isso é configurável.** Dar
+  o plano mais caro no trial entrega o produto inteiro de graça e cria um
+  impasse: ao fim do período o cliente pode estar acima dos limites do plano que
+  conseguiria pagar, e o downgrade é recusado — ele fica preso sem conseguir
+  assinar. O plano é `trial_plan_id`, ajustável no `/admin/planos`.
+- **Plano ativo precisa de preço, e isso é trigger.** Um plano de R$ 0,00 com
+  limites ilimitados e `is_active` aparecia na vitrine como oferta. A regra virou
+  trigger para valer também em insert direto pelo PostgREST — correção não pode
+  depender de alguém lembrar de chamar a RPC certa.
 - **Assinatura sem acesso tranca o painel, não o salão.** `expired`,
   `cancelled` e `suspended` levam à tela de aviso com o caminho para `/planos`;
   `past_due` continua entrando — casa em atraso está operando, e travar o salão
@@ -669,10 +678,21 @@ recusada; produto acima do limite recusado; upgrade liberando insert; assinatura
 expirada, cancelada e suspensa bloqueando escrita; **pedido do cliente seguindo
 permitido**; RPC de admin recusando quem não é admin; preço e limite negativos
 recusados; revisão expirando trial e marcando atraso; auditoria registrando tudo)
-e **169 checagens automatizadas** — 72 de lógica, 56 de UI em jsdom e 41 de SSR.
+e **187 checagens automatizadas** — 84 de lógica, 62 de UI em jsdom e 41 de SSR.
 A suíte SQL também encontrou dois bugs reais, corrigidos na hora: `suspended`
 não estava na lista de bloqueio de escrita e apagar um restaurante com
 assinatura esbarrava no guard do plano.
+
+**Correções pós-merge (`0013`).** Abrir a produção depois do merge mostrou o que
+nenhum harness pegava, porque todos montavam o próprio catálogo: o plano herdado
+`pro` (R$ 0,00, ilimitado) estava ativo na vitrine e podia ser escolhido de
+graça; os textos dos planos novos chegaram ao banco sem acento; e o trial era
+concedido no plano mais caro, com o impasse de downgrade descrito acima. Os três
+foram corrigidos no banco (planos internos fora da vitrine, acentuação via escape
+unicode, `trial_plan_id` com padrão no mais barato), a regra "ativo exige preço"
+virou trigger, e os harnesses ganharam 11 checagens que prendem a correção —
+inclusive uma que lê o SQL aplicado para garantir o filtro de plano pago na
+vitrine.
 
 ---
 
@@ -805,6 +825,7 @@ supabase/migrations/    schema aplicado via Supabase
                         0010_restaurant_theme.sql (Etapa 9)
                         0011_platform_admin.sql (Etapa 10)
                         0012_plans_subscriptions.sql (Etapa 11)
+                        0013_plan_catalog_and_trial_fix.sql (correções E11)
 scripts/                auditoria de layout + teste de RLS
 ```
 

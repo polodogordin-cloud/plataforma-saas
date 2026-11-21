@@ -27,7 +27,11 @@ export const revalidate = 60;
  */
 export default async function PlansPage() {
   const [payload, user] = await Promise.all([getPublicPlans(), getSessionUser()]);
-  const { plans, trial_days: trialDays } = payload;
+  const { plans, trial_days: trialDays, trial_plan_id: trialPlanId } = payload;
+
+  // Nome do plano que o teste concede: o visitante precisa saber o que ganha,
+  // e qual plano é esse é decisão do banco (configurável no /admin).
+  const trialPlanName = plans.find((plan) => plan.id === trialPlanId)?.name ?? null;
 
   // Plano do meio em destaque quando há três ou mais — é o que a maioria
   // escolhe, e destacar o mais caro teria o efeito contrário.
@@ -56,6 +60,7 @@ export default async function PlansPage() {
           <p className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">
             <Sparkles className="size-3.5" aria-hidden="true" />
             {trialDays} dias grátis para testar
+            {trialPlanName ? ` no ${trialPlanName}` : ""}
           </p>
           <h1 className="mt-3 text-[1.7rem] font-bold leading-tight tracking-tight text-ink-900">
             Um plano para cada tamanho de casa
@@ -85,7 +90,7 @@ export default async function PlansPage() {
                     size="lg"
                     variant={index === featuredIndex ? "primary" : "secondary"}
                   >
-                    {plan.price <= 0 ? "Começar grátis" : "Começar agora"}
+                    Começar agora
                   </ButtonLink>
                 }
                 footer={

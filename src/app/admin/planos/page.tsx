@@ -58,7 +58,14 @@ export default async function AdminPlansPage() {
             title="Teste e tolerância"
             description="Configuração global aplicada a todas as casas"
           />
-          <TrialSettingsForm trialDays={settings.trial_days ?? 7} graceDays={settings.grace_days ?? 5} />
+          <TrialSettingsForm
+            trialDays={settings.trial_days ?? 7}
+            graceDays={settings.grace_days ?? 5}
+            trialPlanId={settings.trial_plan_id}
+            plans={plans
+              .filter((plan) => plan.is_active && plan.price > 0)
+              .map((plan) => ({ id: plan.id, name: plan.name, price: plan.price }))}
+          />
         </Card>
 
         <div className="flex items-center justify-between gap-3">
