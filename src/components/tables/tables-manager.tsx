@@ -6,11 +6,13 @@ import { Armchair, Plus, Search, X } from "lucide-react";
 import { TableCard } from "@/components/tables/table-card";
 import { TableSheet } from "@/components/tables/table-sheet";
 import { QrSheet } from "@/components/tables/qr-sheet";
+import { NfcSheet } from "@/components/tables/nfc-sheet";
 import { ConfirmSheet } from "@/components/ui/confirm-sheet";
 import { Button } from "@/components/ui/button";
 import { deleteTable } from "@/actions/tables";
 import { nextTableName } from "@/lib/validation";
-import type { RestaurantTable } from "@/lib/types";
+import { summarizeTableNfc } from "@/lib/nfc";
+import type { NfcEvent, RestaurantTable, TableNfcTag } from "@/lib/types";
 import { cn, normalizeSearch } from "@/lib/utils";
 
 type Props = {
@@ -18,6 +20,10 @@ type Props = {
   restaurantSlug: string;
   origin: string;
   initialTables: RestaurantTable[];
+  /** TAGs do restaurante inteiro; agrupadas por mesa aqui. */
+  nfcTags: TableNfcTag[];
+  /** Histórico por mesa (`table_id` → eventos mais recentes). */
+  nfcHistory: Record<string, NfcEvent[]>;
   canEdit: boolean;
 };
 
@@ -31,6 +37,8 @@ export function TablesManager({
   restaurantSlug,
   origin,
   initialTables,
+  nfcTags,
+  nfcHistory,
   canEdit,
 }: Props) {
   const router = useRouter();
@@ -43,6 +51,10 @@ export function TablesManager({
     table: null,
   });
   const [qr, setQr] = useState<{ open: boolean; table: RestaurantTable | null }>({
+    open: false,
+    table: null,
+  });
+  const [nfc, setNfc] = useState<{ open: boolean; table: RestaurantTable | null }>({
     open: false,
     table: null,
   });
@@ -65,7 +77,29 @@ export function TablesManager({
     );
   }, [tables, query]);
 
+  /**
+   * Resumo de NFC por mesa.
+   *
+   * Uma mesa pode ter várias TAGs; o cartão mostra o estado consolidado e o
+   * sheet mostra cada TAG. Recalcula junto com a lista de TAGs do servidor.
+   */
+  const nfcByTable = useMemo(() => {
+    const grouped = new Map<string, TableNfcTag[]>();
+    for (const tag of nfcTags) {
+      grouped.set(tag.table_id, [...(grouped.get(tag.table_id) ?? []), tag]);
+    }
+    return grouped;
+  }, [nfcTags]);
+
   const activeCount = tables.filter((table) => table.is_active).length;
+  const nfcConfiguredCount = useMemo(
+    () =>
+      tables.filter((table) => {
+        const summary = summarizeTableNfc(nfcByTable.get(table.id) ?? []);
+        return summary.primary?.is_active && summary.configured;
+      }).length,
+    [tables, nfcByTable],
+  );
   const suggestedName = useMemo(
     () => nextTableName(tables.map((table) => table.name)),
     [tables],
@@ -89,9 +123,10 @@ export function TablesManager({
   return (
     <div className="space-y-4">
       {/* Resumo */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <SummaryTile label="Mesas" value={tables.length} />
         <SummaryTile label="Ativas" value={activeCount} tone="brand" />
+        <SummaryTile label="Com NFC" value={nfcConfiguredCount} tone="neutral" />
         <SummaryTile
           label="Desativadas"
           value={tables.length - activeCount}
@@ -145,7 +180,9 @@ export function TablesManager({
               <TableCard
                 table={table}
                 canEdit={canEdit}
+                nfcTag={summarizeTableNfc(nfcByTable.get(table.id) ?? []).primary}
                 onShowQr={() => setQr({ open: true, table })}
+                onShowNfc={() => setNfc({ open: true, table })}
                 onEdit={() => setForm({ open: true, table })}
                 onActiveChange={(id, isActive) =>
                   setTables((current) =>
@@ -162,8 +199,8 @@ export function TablesManager({
 
       {canEdit && tables.length > 0 && (
         <p className="pb-1 text-center text-xs leading-relaxed text-ink-400">
-          O QR Code aponta para um endereço único da mesa. Mudar preços ou fotos no
-          cardápio não exige reimprimir nada.
+          QR Code e TAG NFC apontam para o mesmo endereço da mesa. Mudar preços,
+          fotos ou o cardápio inteiro não exige reimprimir nem regravar nada.
         </p>
       )}
 
@@ -205,6 +242,16 @@ export function TablesManager({
         table={qr.table}
         tableUrl={qr.table ? urlFor(qr.table) : ""}
         onClose={() => setQr({ open: false, table: null })}
+      />
+
+      <NfcSheet
+        open={nfc.open}
+        table={nfc.table}
+        origin={origin}
+        canEdit={canEdit}
+        tags={nfc.table ? (nfcByTable.get(nfc.table.id) ?? []) : []}
+        history={nfc.table ? (nfcHistory[nfc.table.id] ?? []) : []}
+        onClose={() => setNfc({ open: false, table: null })}
       />
 
       <ConfirmSheet

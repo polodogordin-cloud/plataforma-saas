@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Armchair, Loader2, Pencil, QrCode } from "lucide-react";
+import { Armchair, Loader2, Nfc, Pencil, QrCode } from "lucide-react";
 import { toggleTableActive } from "@/actions/tables";
-import { TABLE_STATUS_LABEL, type RestaurantTable } from "@/lib/types";
+import { NfcStatusBadge } from "@/components/tables/nfc-status-badge";
+import { TABLE_STATUS_LABEL, type RestaurantTable, type TableNfcTag } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,12 +19,17 @@ export function TableCard({
   onShowQr,
   onEdit,
   canEdit,
+  nfcTag,
+  onShowNfc,
   onActiveChange,
 }: {
   table: RestaurantTable;
   onShowQr: () => void;
   onEdit: () => void;
   canEdit: boolean;
+  /** TAG NFC principal da mesa, se houver. */
+  nfcTag?: TableNfcTag | null;
+  onShowNfc?: () => void;
   /** Mantém a lista do painel em sincronia sem esperar recarregar a página. */
   onActiveChange?: (tableId: string, isActive: boolean) => void;
 }) {
@@ -103,6 +109,12 @@ export function TableCard({
             {table.code && <span className="truncate">· {table.code}</span>}
           </p>
 
+          {nfcTag !== undefined && (
+            <div className="mt-1.5">
+              <NfcStatusBadge tag={nfcTag ?? null} />
+            </div>
+          )}
+
           {table.notes && (
             <p className="mt-1 line-clamp-1 text-[0.7rem] text-ink-400">{table.notes}</p>
           )}
@@ -122,12 +134,22 @@ export function TableCard({
 
           <button
             type="button"
+            onClick={onShowNfc}
+            aria-label={`NFC da ${table.name}`}
+            className="tap-target inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-ink-200 bg-white px-3 text-sm font-semibold text-ink-700 active:scale-[0.98]"
+          >
+            <Nfc className="size-4" aria-hidden="true" />
+            NFC
+          </button>
+
+          <button
+            type="button"
             onClick={onEdit}
             aria-label={`Editar ${table.name}`}
             className="tap-target inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-ink-200 bg-white px-3 text-sm font-semibold text-ink-700 active:scale-[0.98]"
           >
             <Pencil className="size-4" aria-hidden="true" />
-            Editar
+            <span className="sr-only sm:not-sr-only">Editar</span>
           </button>
 
           <button

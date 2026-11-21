@@ -212,3 +212,31 @@ export const tableSchema = z.object({
 });
 
 export type TableInput = z.infer<typeof tableSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* NFC (Etapa 5)                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `nfc_status` aceita os quatro estados do enum do banco.
+ *
+ * O número físico da TAG é opcional de propósito: exigir o UID travaria a
+ * maioria dos casos, porque cada app de gravação mostra esse dado em um lugar
+ * diferente (ou não mostra).
+ */
+export const nfcTagSchema = z.object({
+  label: z
+    .string()
+    .trim()
+    .max(60, "O rótulo pode ter no máximo 60 caracteres."),
+  tagIdentifier: z
+    .string()
+    .trim()
+    .max(64, "O identificador pode ter no máximo 64 caracteres."),
+  status: z.enum(["not_configured", "configured", "tested", "disabled"]),
+  isActive: z.boolean(),
+  tableId: z.string().uuid("Mesa não identificada."),
+  tagId: z.string().uuid().optional(),
+});
+
+export type NfcTagInput = z.infer<typeof nfcTagSchema>;

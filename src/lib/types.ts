@@ -228,3 +228,85 @@ export type TableContext = {
   table_id: string;
   table_name: string;
 };
+
+/* ==========================================================================
+ * NFC (Etapa 5)
+ * ========================================================================== */
+
+/**
+ * Estado de uma TAG NFC.
+ *
+ * Não existe "NFC da mesa": existe uma TAG física, e a mesma mesa pode ter
+ * várias (placa com QR + NFC, reserva, reposição). O status é da TAG.
+ */
+export type NfcStatus = "not_configured" | "configured" | "tested" | "disabled";
+
+export const NFC_STATUS_LABEL: Record<NfcStatus, string> = {
+  not_configured: "Não configurado",
+  configured: "Configurado",
+  tested: "Testado",
+  disabled: "Desativado",
+};
+
+/** Estados em que a TAG tem uma URL gravada de fato. */
+export const NFC_CONFIGURED_STATUSES: readonly NfcStatus[] = ["configured", "tested"];
+
+export type NfcEventType =
+  | "created"
+  | "status_changed"
+  | "identifier_changed"
+  | "activated"
+  | "deactivated"
+  | "replaced"
+  | "url_rotated";
+
+export const NFC_EVENT_LABEL: Record<NfcEventType, string> = {
+  created: "TAG cadastrada",
+  status_changed: "Status alterado",
+  identifier_changed: "Identificador alterado",
+  activated: "TAG ativada",
+  deactivated: "TAG desativada",
+  replaced: "TAG substituída",
+  url_rotated: "URL da mesa mudou — regravar a TAG",
+};
+
+/**
+ * TAG + a URL pública calculada no banco.
+ *
+ * `nfc_url` é sempre a URL atual da mesa (`/r/{slug}/table/{token}`), a mesma
+ * do QR Code. Nunca é uma cópia guardada: rotacionar o token ou mudar o slug
+ * atualiza a URL sem migração.
+ */
+export type TableNfcTag = {
+  tag_id: string;
+  restaurant_id: string;
+  table_id: string;
+  label: string | null;
+  tag_identifier: string | null;
+  status: NfcStatus;
+  is_active: boolean;
+  /** A URL mudou depois desta gravação: a TAG precisa ser regravada. */
+  is_stale: boolean;
+  configured_at: string | null;
+  tested_at: string | null;
+  replaced_tag_id: string | null;
+  created_at: string;
+  updated_at: string;
+  table_name: string;
+  table_is_active: boolean;
+  restaurant_slug: string;
+  /** Caminho público (`/r/...`). A origem absoluta é montada na UI. */
+  nfc_url: string;
+  nfc_enabled: boolean;
+  needs_rerecord: boolean;
+};
+
+export type NfcEvent = {
+  id: string;
+  event: NfcEventType;
+  from_status: NfcStatus | null;
+  to_status: NfcStatus | null;
+  note: string | null;
+  created_at: string;
+  actor_id: string | null;
+};
