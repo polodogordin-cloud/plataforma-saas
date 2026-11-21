@@ -188,6 +188,53 @@ O cálculo usa o **fuso do restaurante**, trata turno que passa da meia-noite
 (18:00 → 02:00) e, sem configuração, o cardápio **não afirma** estar aberto.
 "Fechado" nunca diz "abre hoje" com um horário que já passou.
 
+### Mesas e QR Codes (Etapa 4)
+
+Cada mesa do salão ganha um **endereço público próprio**:
+`/r/{slug}/table/{token}`. É esse endereço que vai impresso no QR Code.
+
+**Por que um token, e não o número da mesa.** O rótulo ("Mesa 01") é só
+apresentação: muda de restaurante para restaurante, pode ser duplicado entre
+tenants e o dono pode renomear. A URL usa `tables.public_token` — 24 caracteres
+do alfabeto `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (~119 bits), gerado pelo banco,
+único e sem sequência previsível. Trocar o número da mesa não invalida o QR
+impresso; trocar o token, sim.
+
+| Camada | Papel |
+| --- | --- |
+| `tables.public_token` | identidade pública permanente (QR e, depois, NFC) |
+| `tables.is_active` | liga/desliga o acesso pelo QR sem apagar a mesa |
+| `tables.status` | ocupação do salão: `free`, `occupied`, `reserved`, `inactive` |
+| `resolve_table_token(token)` | RPC `security definer`: token → restaurante + mesa |
+| `public_table_context` | view pública mínima (token, restaurante, nome) |
+
+- **O cardápio nunca é copiado para a mesa.** A página resolve o token e
+  renderiza os dados atuais do restaurante. Mudar preço, nome, descrição, foto
+  ou disponibilidade **não exige reimprimir o QR Code** — a URL é a mesma.
+- **Superfície pública mínima:** `anon` não tem `select` em `tables`. Ele só
+  alcança a RPC e a view, que devolvem nome da mesa e restaurante — nada de
+  `notes`, `code`, ids internos ou dados de outro tenant.
+- **Só resolve mesa utilizável:** a RPC exige restaurante `published` **e**
+  `is_active = true`. Mesa desativada ou cardápio pausado respondem a mesma
+  página de indisponibilidade, sem revelar se o token existe.
+- **Trocar o token invalida o material impresso.** `rotate_table_token()` guarda
+  o token anterior por **30 minutos** (`previous_token`) para não derrubar quem
+  já está com o cardápio aberto. A interface avisa que o QR e a futura TAG NFC
+  precisam ser substituídos.
+- **Sessão do cliente:** o middleware grava o token em um cookie
+  (`menuvo_table`, 3 h) ao abrir a mesa — o mesmo token que já está na URL, sem
+  login e sem credencial de escrita. As próximas etapas (carrinho, pedido,
+  chamada de garçom) leem esse cookie; qualquer escrita vai revalidar o token no
+  banco.
+
+**QR Code sem dependência.** `src/lib/qr.ts` gera a matriz (byte mode, ECC M,
+versões 1–10) e as imagens PNG/SVG em JavaScript puro, sem `node_modules`. O PNG
+usa deflate com blocos de Huffman fixos — um PNG "stored" do mesmo código teria
+~1,5 MB, e o mesmo QR sai com ~48 kB. Verificado contra um decodificador real
+(`jsQR`): 30 de 30 URLs de mesa decodificam, inclusive com acentos.
+
+---
+
 ---
 
 ## Rotas
@@ -205,8 +252,10 @@ O cálculo usa o **fuso do restaurante**, trata turno que passa da meia-noite
 | `/app/cardapio`                       | Cardápio: categorias e produtos (Etapa 2)       |
 | `/app/cardapio/produtos`              | Lista completa de produtos com busca e filtros  |
 | `/r/[slug]`                           | **Cardápio público (sem login)**                |
+| `/r/[slug]/table/[token]`             | **Cardápio aberto pelo QR/NFC da mesa**         |
+| `/app/mesas`                          | Mesas: cartões, ativar/desativar, QR (Etapa 4)  |
+| `/app/mesas/[id]/qr`                  | Download do QR (`?format=png` ou `?format=svg`) |
 | `/sitemap.xml`, `/robots.txt`         | Indexação — só cardápios publicados             |
-| `/app/mesas`                          | Mesas — Etapa 4/5                               |
 | `/app/pedidos`                        | Pedidos — Etapa 6/7                             |
 | `/app/configuracoes`                  | Hub de configurações                            |
 | `/app/configuracoes/conta`            | Conta do usuário                                |
@@ -226,7 +275,8 @@ src/
 │   ├── auth.ts         cadastro, login, logout, senha
 │   ├── restaurant.ts   criação e edição do restaurante
 │   ├── account.ts      perfil do usuário
-│   └── menu.ts         categorias e produtos (CRUD, toggle, reordenação)
+│   ├── menu.ts         categorias e produtos (CRUD, toggle, reordenação)
+│   └── tables.ts       mesas (CRUD, ativar/desativar, ocupação, novo token)
 ├── app/
 │   ├── layout.tsx      metadata, viewport, manifest
 │   ├── page.tsx        landing
@@ -240,7 +290,9 @@ src/
 │   ├── menu/           Painel: MenuManager, CategoryCard, ProductCard,
 │   │                   sheets, ProductsBrowser, SortableProvider (dnd-kit)
 │   ├── public/         Cardápio do cliente: PublicHeader, PublicMenuView,
-│   │                   ProductRow, ProductDetail
+│   │                   ProductRow, ProductDetail, TableBadge
+│   ├── tables/         Painel de mesas: TablesManager, TableCard,
+│   │                   TableSheet, QrSheet, QrPrintCard
 │   └── ui/             Button, Field, Card, Badge, Sheet, Switch,
 │                       ConfirmSheet, ComingSoon…
 ├── lib/
@@ -249,12 +301,15 @@ src/
 │   ├── types.ts        tipos de domínio
 │   ├── utils.ts        helpers
 │   ├── opening-hours.ts horário de funcionamento (fuso, meia-noite)
+│   ├── qr.ts           gerador de QR Code (matriz, PNG, SVG) sem dependências
+│   ├── table-session.ts cookie de contexto da mesa (QR/NFC)
 │   └── validation.ts   schemas Zod
 └── middleware.ts
 supabase/migrations/    schema aplicado via Supabase
                         0001_init.sql (Etapa 1)
                         0002_menu_categories_products.sql (Etapa 2)
                         0003_public_menu.sql (Etapa 3)
+                        0004_tables_qr.sql (Etapa 4)
 scripts/                auditoria de layout + teste de RLS
 ```
 
@@ -274,6 +329,10 @@ scripts/                auditoria de layout + teste de RLS
   correspondente — nunca dados fictícios apresentados como reais.
 - **Feedback de RLS**: mutações usam `.select()` e verificam se alguma linha mudou,
   para não reportar “salvo” quando a policy bloqueou a operação.
+- **QR Code impresso**: "Imprimir" usa uma raiz `.print-sheet` fora do fluxo da
+  tela; no papel só existe o cartão da mesa (com `@page A4`), jamais o painel.
+- **Identidade pública opaca**: o que o cliente vê na URL nunca é o número da
+  mesa nem o `id` do banco, mas um token que o dono pode rotacionar.
 
 ---
 
