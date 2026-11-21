@@ -90,3 +90,90 @@ export type ActionState = {
   message?: string;
   fieldErrors?: Record<string, string[]>;
 };
+
+/* ==========================================================================
+   Etapa 2 · Categorias e produtos
+   ========================================================================== */
+
+/**
+ * Converte o texto digitado em número.
+ * Aceita "32,90", "32.90", "R$ 32,90" e "1.234,56" (formato brasileiro).
+ */
+export function parsePrice(raw: string): number | null {
+  const cleaned = raw
+    .replace(/[^\d.,-]/g, "")
+    .trim();
+  if (!cleaned) return null;
+
+  let normalized = cleaned;
+
+  // Formato brasileiro com separador de milhar: 1.234,56
+  if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(cleaned)) {
+    normalized = cleaned.replace(/\./g, "").replace(",", ".");
+  } else if (cleaned.includes(",")) {
+    // 32,90 -> 32.90
+    normalized = cleaned.replace(/\./g, "").replace(",", ".");
+  }
+
+  const value = Number(normalized);
+  if (!Number.isFinite(value) || value < 0) return null;
+  return Math.round(value * 100) / 100;
+}
+
+/** Formata para "R$ 32,90". */
+export function formatPrice(value: number | string | null | undefined): string {
+  const number = typeof value === "string" ? Number(value) : (value ?? 0);
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number.isFinite(number) ? number : 0);
+}
+
+export const categorySchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Informe o nome da categoria.")
+    .max(80, "Máximo de 80 caracteres."),
+  description: z.string().trim().max(300, "Máximo de 300 caracteres.").optional(),
+  isActive: z.boolean(),
+});
+
+export const productSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Informe o nome do produto.")
+    .max(120, "Máximo de 120 caracteres."),
+  description: z.string().trim().max(400, "Máximo de 400 caracteres.").optional(),
+  price: z
+    .string()
+    .trim()
+    .min(1, "Informe o preço.")
+    .superRefine((raw, ctx) => {
+      const parsed = parsePrice(raw);
+      if (parsed === null) {
+        ctx.addIssue({ code: "custom", message: "Preço inválido. Use 0,00." });
+      } else if (parsed > 999999.99) {
+        ctx.addIssue({ code: "custom", message: "Preço muito alto." });
+      }
+    }),
+  categoryId: z.string().trim().optional(),
+  isAvailable: z.boolean(),
+  isFeatured: z.boolean(),
+  internalCode: z.string().trim().max(40, "Máximo de 40 caracteres.").optional(),
+});
+
+export type CategoryInput = z.infer<typeof categorySchema>;
+export type ProductInput = z.infer<typeof productSchema>;
+
+/**
+ * Normaliza um UUID vindo do cliente. Retorna null se não for válido —
+ * o banco também valida, mas evitamos enviar lixo para a API.
+ */
+export function toUuidOrNull(value: FormDataEntryValue | null | undefined): string | null {
+  const raw = String(value ?? "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)
+    ? raw
+    : null;
+}

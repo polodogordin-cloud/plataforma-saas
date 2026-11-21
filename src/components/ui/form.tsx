@@ -11,15 +11,23 @@ export function SubmitButton({
   className,
   size = "lg",
   pendingLabel,
+  ...props
 }: {
   children: React.ReactNode;
   className?: string;
   size?: "md" | "lg" | "sm";
   pendingLabel?: string;
-}) {
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "type" | "children">) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" size={size} block loading={pending} className={className}>
+    <Button
+      type="submit"
+      size={size}
+      block
+      loading={pending}
+      className={className}
+      {...props}
+    >
       {pending ? (pendingLabel ?? "Enviando…") : children}
     </Button>
   );
