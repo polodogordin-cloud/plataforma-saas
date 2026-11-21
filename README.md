@@ -11,10 +11,19 @@ ativa/desativa e reordena categorias; cadastra e edita produtos com nome, descri
 preço, categoria, disponibilidade, destaque e código interno; busca por
 nome/descrição/código e filtro por categoria. Arrastar-e-soltar otimizado para toque.
 
-**Etapa 3 — cardápio público (atual).** Cada restaurante publicado tem um cardápio
+**Etapa 3 — cardápio público.** Cada restaurante publicado tem um cardápio
 em `/r/{slug}`, sem login: capa com logo e status de funcionamento, abas de
 categoria com rolagem lateral sincronizada com a página, busca instantânea, e
 detalhe do produto em tela cheia com quantidade. Nada de tela administrativa.
+
+**Etapas 4–7 — mesas, NFC, pedidos e painel em tempo real.** Cada mesa tem QR
+Code e TAG NFC; o cliente monta o carrinho e pede; a equipe acompanha tudo em
+`/app/pedidos` sem recarregar.
+
+**Etapa 8 — chamar garçom e pedir a conta (atual).** Barra fixa no cardápio da
+mesa com **🛎 Garçom · 🛒 Carrinho · 💳 Conta**, confirmação antes do envio,
+anti-duplicata e cooldown no banco, e seção SOLICITAÇÕES no painel com contador
+vermelho, "Há 1 minuto" e ATENDER → MARCAR COMO RESOLVIDO, em tempo real.
 
 > 📱 Prioridade absoluta: **mobile**. Cada tela foi desenhada para uso com uma mão
 > em telas de 320px a 430px. No desktop o conteúdo é centralizado em uma coluna
@@ -381,6 +390,61 @@ o alerta já nasce isolado em `src/lib/notify.ts`, com um ponto único de dispar
 
 ---
 
+### Chamar garçom e pedir a conta (Etapa 8)
+
+O cliente sentado com o celular na mão não quer um produto — quer **atenção**.
+Agora o cardápio da mesa tem uma barra fixa com três destinos:
+**🛎 Garçom · 🛒 Carrinho · 💳 Conta**, sempre à mão durante a navegação.
+
+| Objeto | Papel |
+| --- | --- |
+| `public.table_requests` | uma linha por pedido de atenção (`waiter` / `bill`) |
+| `public.create_table_request(token, tipo, nota)` | cliente registra pelo **token da mesa** |
+| `public.get_table_request_state(token)` | o que a tela do cliente deve mostrar agora |
+| `public.set_table_request_status(id, status)` | equipe atende / resolve / cancela |
+| `public.list_table_requests(...)` | fila do painel, mais antigas primeiro |
+| `public.table_request_counts(...)` | contadores do painel e do dashboard |
+
+- **Solicitação não é pedido.** Chamar garçom não tem valor, não vai para a
+  cozinha e não vira linha em `orders`: é outra tabela, com ciclo de vida
+  próprio (`pending → acknowledged → resolved`, ou `cancelled`). Misturar os
+  dois faria o faturamento e a cozinha carregarem um conceito que não é deles.
+- **A mesa vem do token, nunca do cliente.** `create_table_request` resolve
+  `(restaurante, mesa)` por `resolve_table_token`. Não existe parâmetro de
+  `table_id` — então não existe caminho para chamar garçom na mesa dos outros.
+- **Anti-duplicata é índice, não `if`.** Um índice único parcial garante no
+  máximo uma solicitação **viva** por (mesa, tipo). Dois toques simultâneos
+  passam pelas duas leituras, mas só um `insert` vence. Tocando de novo, a RPC
+  devolve a solicitação que já está na fila — a tela mostra "Solicitação já
+  enviada" com o horário original, em vez de erro.
+- **Cooldown cobre a metralhadora.** Depois de resolvida, a mesma mesa só pode
+  chamar de novo após 120s (`table_request_cooldown_seconds()`). Curto o
+  bastante para não atrapalhar, longo o bastante para conter toque repetido.
+  O botão desabilitado com "Aguarde 45s" é conveniência: a regra mora no banco.
+- **Confirmação antes de incomodar o salão.** Tocar em 🛎 abre um sheet com
+  "Você deseja chamar um garçom para esta mesa?" e CANCELAR / CHAMAR GARÇOM.
+  Ao confirmar, o retorno é "Garçom a caminho!"; na conta, "Conta solicitada!".
+- **Tempo real também para as solicitações.** `table_requests` está na
+  publicação `supabase_realtime` com `replica identity full`; o painel assina
+  `table-requests:{restaurantId}`, relê pela RPC ao receber evento e não faz
+  polling (há só um relógio de 30s que repinta o "Há X minutos").
+- **O painel mostra a fila, não um histórico.** Seção SOLICITAÇÕES com contador
+  "🔴 2 solicitações pendentes", card por mesa (ícone + tipo + "Há 1 minuto" +
+  nota), ação **[ATENDER]** que vira **[MARCAR COMO RESOLVIDO]**. Resolvida sai
+  da lista; a linha fica no banco para auditoria. A seção some quando a fila
+  zera, para não ocupar a primeira dobra do salão com um bloco vazio.
+- **Atender direto é permitido.** Numa casa pequena o garçom chega na mesa e já
+  resolve; obrigar o passo intermediário seria burocracia que ninguém cumpre.
+  O que o banco recusa é reabrir ou mudar uma solicitação encerrada.
+- **Alvos de toque e área segura.** Os três botões da barra têm 56px de altura,
+  `min-w-0` e `flex` (cabem em 320px sem largura fixa), e a barra respeita
+  `env(safe-area-inset-bottom)`.
+
+Verificação da etapa: **27 checagens SQL** no banco vivo (fluxo completo do
+roteiro, cooldown, anti-duplicata, token inválido, mesa desativada, isolamento
+entre duas casas, publicação de tempo real) e **64 checagens de UI** em jsdom
+(41 de comportamento + 23 de tempo real e layout em 320px).
+
 ---
 
 ## Rotas
@@ -426,7 +490,8 @@ src/
 │   ├── tables.ts       mesas (CRUD, ativar/desativar, ocupação, novo token)
 │   ├── nfc.ts          TAGs NFC das mesas
 │   ├── orders.ts       criação e releitura de pedidos (Etapa 6)
-│   └── orders-panel.ts status, anotações e histórico (Etapa 7)
+│   ├── orders-panel.ts status, anotações e histórico (Etapa 7)
+│   └── table-requests.ts fila de solicitações da mesa (Etapa 8)
 ├── app/
 │   ├── layout.tsx      metadata, viewport, manifest
 │   ├── page.tsx        landing
@@ -441,10 +506,13 @@ src/
 │   │                   sheets, ProductsBrowser, SortableProvider (dnd-kit)
 │   ├── public/         Cardápio do cliente: PublicHeader, PublicMenuView,
 │   │                   ProductRow, ProductDetail, TableBadge,
-│   │                   CartProvider, CartBar, CartSheet, OrderSuccess
+│   │                   CartProvider, CartSheet, OrderSuccess,
+│   │                   TableActionsBar (Garçom/Carrinho/Conta),
+│   │                   TableRequestSheet (confirmação)
 │   ├── orders/         Painel da equipe: OrdersPanel, OrderCard,
-│   │                   OrderDetailSheet, OrderBoardCards, hooks de
-│   │                   tempo real e de paginação
+│   │                   OrderDetailSheet, OrderBoardCards,
+│   │                   TableRequestsSection, hooks de tempo real
+│   │                   e de paginação
 │   ├── tables/         Painel de mesas: TablesManager, TableCard,
 │   │                   TableSheet, QrSheet, QrPrintCard,
 │   │                   NfcPanel, NfcSheet, NfcTagSheet, NfcStatusBadge
@@ -462,8 +530,9 @@ src/
 │   ├── cart.ts         regras do carrinho (módulo neutro, testável)
 │   ├── order-status.ts ícone, rótulo e cor de cada status
 │   ├── order-time.ts   tempo de espera e alerta de atraso
+│   ├── table-request.ts disponibilidade/cooldown das solicitações (neutro)
 │   ├── notify.ts       som (WebAudio), vibração e preferência
-│   ├── realtime.ts     nome do canal de tempo real
+│   ├── realtime.ts     nomes dos canais de tempo real
 │   └── validation.ts   schemas Zod
 └── middleware.ts
 supabase/migrations/    schema aplicado via Supabase
@@ -475,6 +544,7 @@ supabase/migrations/    schema aplicado via Supabase
                         0006_nfc_stale_and_replaced.sql (correções da Etapa 5)
                         0007_orders.sql (Etapa 6)
                         0008_order_panel.sql (Etapa 7)
+                        0009_table_requests.sql (Etapa 8)
 scripts/                auditoria de layout + teste de RLS
 ```
 
@@ -492,6 +562,11 @@ scripts/                auditoria de layout + teste de RLS
 - **Bottom nav fixa** com 5 destinos, ícone + rótulo e indicador ativo.
 - **Estados honestos**: telas não implementadas mostram “Em breve” com a etapa
   correspondente — nunca dados fictícios apresentados como reais.
+- **Solicitação da mesa é outro domínio.** Chamar garçom e pedir a conta não
+  entram em `orders`: são `table_requests`, com ciclo de vida próprio e sem
+  valor. A mesa vem do token (nunca do corpo da requisição), a duplicata é
+  barrada por índice único parcial e o cooldown vive no banco — a tela só
+  reflete a decisão do servidor.
 - **Tempo real sem polling.** O painel não consulta em intervalo: assina o
   canal, e o evento só dispara uma releitura. Menos requisição, menos bateria no
   celular do salão e a lista certa no instante em que o pedido chega.
@@ -523,9 +598,10 @@ scripts/                auditoria de layout + teste de RLS
 | ~~5~~ | ~~NFC das mesas~~               | ~~TAGs da mesa (mesma URL do QR) — **concluída**~~  |
 | ~~6~~ | ~~Carrinho e pedidos~~          | ~~`orders`, `order_items`, `create_order` — **concluída**~~ |
 | ~~7~~ | ~~Painel de pedidos~~           | ~~`/app/pedidos` + tempo real — **concluída**~~     |
-| 8     | Personalização do cardápio      | `restaurants.settings` (jsonb) + upload de logo     |
-| 9     | Planos e assinaturas            | `plans`, `subscriptions`; gate por `restaurant_id`   |
-| 10    | Publicação e produção           | domínios, observabilidade, cache                    |
+| ~~8~~ | ~~Chamar garçom / pedir a conta~~ | ~~`table_requests` + barra do cardápio — **concluída**~~ |
+| 9     | Personalização do cardápio      | `restaurants.settings` (jsonb) + upload de logo     |
+| 10    | Planos e assinaturas            | `plans`, `subscriptions`; gate por `restaurant_id`   |
+| 11    | Publicação e produção           | domínios, observabilidade, cache                    |
 
 Pontos já preparados: o bucket de storage existe, `settings` é jsonb livre para a
 personalização, o status do restaurante já é modelado (`draft → published`), e a

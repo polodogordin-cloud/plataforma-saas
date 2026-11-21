@@ -6,7 +6,8 @@ import { ProductRow } from "@/components/public/product-row";
 import { ProductDetail } from "@/components/public/product-detail";
 import { FeaturedStrip } from "@/components/public/public-header";
 import { CartProvider, useCart } from "@/components/public/cart-provider";
-import { CartBar } from "@/components/public/cart-bar";
+import { TableActionsBar } from "@/components/public/table-actions-bar";
+import { TableRequestSheet } from "@/components/public/table-request-sheet";
 import { CartSheet } from "@/components/public/cart-sheet";
 import {
   OrderSuccess,
@@ -14,11 +15,14 @@ import {
   readLastOrderNumber,
 } from "@/components/public/order-success";
 import { readTableOrder } from "@/actions/orders";
+import { readTableRequestState } from "@/actions/table-requests";
 import type {
   PublicMenu,
   PublicMenuSection,
   PublicProduct,
   TableOrder,
+  TableRequestState,
+  TableRequestType,
 } from "@/lib/types";
 import { cn, normalizeSearch } from "@/lib/utils";
 
@@ -77,6 +81,10 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
   const [cartOpen, setCartOpen] = useState(false);
   const [sent, setSent] = useState<TableOrder | null>(null);
 
+  /** Solicitações da mesa (Etapa 8): só existem quando há token de mesa. */
+  const [requestState, setRequestState] = useState<TableRequestState | null>(null);
+  const [requestSheet, setRequestSheet] = useState<TableRequestType | null>(null);
+
   const sectionRefs = useRef(new Map<string, HTMLElement>());
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const tabStripRef = useRef<HTMLDivElement>(null);
@@ -102,6 +110,26 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
       if (cancelled) return;
       if (order) setSent(order);
       else forgetLastOrder(tableToken);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tableToken]);
+
+  /**
+   * Situação das solicitações ao abrir o cardápio.
+   *
+   * Se a mesa já chamou o garçom (e ninguém atendeu ainda), a barra mostra
+   * "Chamado ✓" em vez de oferecer o botão como se nada tivesse acontecido —
+   * o cliente vê que o pedido dele está na fila.
+   */
+  useEffect(() => {
+    if (!tableToken) return;
+    let cancelled = false;
+
+    readTableRequestState(tableToken).then((state) => {
+      if (!cancelled) setRequestState(state);
     });
 
     return () => {
@@ -369,9 +397,39 @@ function MenuBody({ menu }: { menu: PublicMenu }) {
       />
 
       {/* Espaço para a última seção não ficar atrás da barra fixa. */}
-      {canOrder && count > 0 && <div className="h-24" aria-hidden="true" />}
+      {canOrder && <div className="h-24" aria-hidden="true" />}
 
-      <CartBar onOpen={() => setCartOpen(true)} />
+      {canOrder && (
+        <TableActionsBar
+          onWaiter={() => setRequestSheet("waiter")}
+          onCart={() => setCartOpen(true)}
+          onBill={() => setRequestSheet("bill")}
+          busy={false}
+          waiterPending={Boolean(requestState?.waiter_status)}
+          billPending={Boolean(requestState?.bill_status)}
+        />
+      )}
+
+      {canOrder && tableToken && requestSheet && (
+        <TableRequestSheet
+          open
+          type={requestSheet}
+          tableToken={tableToken}
+          initialState={requestState}
+          onClose={() => setRequestSheet(null)}
+          onSent={(type) => {
+            // Reflete na barra imediatamente; o sheet já mostra a confirmação.
+            setRequestState((prev) => ({
+              waiter_status:
+                type === "waiter" ? "pending" : (prev?.waiter_status ?? null),
+              waiter_since: type === "waiter" ? new Date().toISOString() : (prev?.waiter_since ?? null),
+              bill_status: type === "bill" ? "pending" : (prev?.bill_status ?? null),
+              bill_since: type === "bill" ? new Date().toISOString() : (prev?.bill_since ?? null),
+              cooldown_until: new Date(Date.now() + 120_000).toISOString(),
+            }));
+          }}
+        />
+      )}
 
       <CartSheet
         open={cartOpen}
