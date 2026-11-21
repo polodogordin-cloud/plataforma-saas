@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
 import { DEFAULT_THEME, normalizeTheme } from "@/lib/theme";
 import type { RestaurantTheme } from "@/lib/types";
 
@@ -49,7 +50,7 @@ export const getPublicRestaurantTheme = cache(
   async (restaurantId: string): Promise<RestaurantTheme> => {
     if (!restaurantId) return emptyTheme();
 
-    const supabase = await createClient();
+    const supabase = createPublicClient();
     const { data, error } = await supabase
       .from("public_restaurant_themes")
       .select(

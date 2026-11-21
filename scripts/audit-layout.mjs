@@ -15,14 +15,29 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
+
+/*
+ * As rotas de cardápio precisam apontar para um restaurante que **exista** no
+ * banco consultado. Antes eram fixas num slug de demonstração
+ * (`burger-house`), que saiu do banco: a auditoria passou a reportar duas
+ * falhas que não são de layout, e falha conhecida e ignorada deixa de ser
+ * sinal.
+ *
+ *   node scripts/audit-layout.mjs <base> <slug> [token]
+ *
+ * Sem token, a rota de mesa é pulada em vez de inventar um.
+ */
+const SLUG = process.argv[3] ?? "famintos";
+const TOKEN = process.argv[4] ?? null;
+
 const ROUTES = [
   "/",
   "/entrar",
   "/criar-conta",
   "/recuperar-senha",
   // Etapa 4: cardápio público sem mesa, painel de mesas e URL de mesa com QR.
-  "/r/burger-house",
-  "/r/burger-house/table/H62U243ECFBJFX55ZXDSKDQY",
+  `/r/${SLUG}`,
+  ...(TOKEN ? [`/r/${SLUG}/table/${TOKEN}`] : []),
   "/app/mesas",
   // Etapa 7: painel de pedidos (exige sessão; sem login redireciona para /entrar)
   "/app/pedidos",
@@ -222,6 +237,15 @@ for (const file of walk("src")) {
 
   source.split("\n").forEach((line, index) => {
     if (!clickable.test(line)) return;
+
+    /*
+     * Comentário não é alvo de toque. O auditor casava com `<a>`/`<button>`
+     * citados em comentário de documentação — daí os avisos em
+     * `whatsapp-button.tsx:13`, que é a linha de um comentário explicando por
+     * que o botão é um `<a>`.
+     */
+    const trimmed = line.trim();
+    if (trimmed.startsWith("*") || trimmed.startsWith("//") || trimmed.startsWith("/*")) return;
     // Link inline dentro de frase (ex.: "Já tem conta? <Link>Entrar</Link>")
     if (/className="[^"]*font-(semibold|medium)[^"]*text-brand/.test(line)) return;
     if (fileHasSafeBase) return;
@@ -229,6 +253,13 @@ for (const file of walk("src")) {
     const block = source.split("\n").slice(index, index + 16).join(" ");
     // Backdrop de modal: cobre a viewport inteira, não é um alvo pequeno.
     if (/absolute inset-0/.test(block)) return;
+
+    /*
+     * `global-error.tsx` não pode depender de Tailwind: se o layout raiz
+     * falhou, o CSS pode não ter carregado. Os botões lá usam `style` inline, e
+     * o alvo está em `minHeight: "48px"` — que o regex de classe não enxerga.
+     */
+    if (/minHeight:\s*"(?:4[4-9]|[5-9]\d)px"/.test(block)) return;
 
     if (!SAFE.test(block)) {
       console.log(`⚠️  alvo de toque pequeno? ${file}:${index + 1}`);

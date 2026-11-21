@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
 import type { RestaurantTable, TableContext } from "@/lib/types";
 
 /**
@@ -53,7 +54,7 @@ export const resolveTableToken = cache(
     // O alfabeto do token é base32 sem ambíguos; descarta consulta malformada.
     if (!/^[2-9A-HJKMNP-Z]{10,64}$/i.test(clean)) return null;
 
-    const supabase = await createClient();
+    const supabase = createPublicClient();
     const { data, error } = await supabase.rpc("resolve_table_token", { p_token: clean });
 
     if (error || !data) return null;

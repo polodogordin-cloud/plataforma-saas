@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
 import type { Restaurant } from "@/lib/types";
 
 /**
@@ -12,7 +12,7 @@ import type { Restaurant } from "@/lib/types";
 export const getRestaurantTimezone = cache(
   async (restaurantId: string): Promise<string> => {
     try {
-      const supabase = await createClient();
+      const supabase = createPublicClient();
       const { data } = await supabase
         .from("restaurants")
         .select("timezone")

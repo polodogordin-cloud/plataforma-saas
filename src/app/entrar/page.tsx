@@ -3,6 +3,7 @@ import Link from "next/link";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { FormAlert } from "@/components/ui/form";
 import { LoginForm } from "./login-form";
+import { safeRedirectPath } from "@/lib/env";
 
 export const metadata: Metadata = {
   title: "Entrar",
@@ -15,7 +16,9 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string; erro?: string; aviso?: string }>;
 }) {
   const { next, erro, aviso } = await searchParams;
-  const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/app";
+  // A regra de redirect seguro vive num lugar só (`lib/env`), para que a tela e
+  // a action não divirjam — divergir aqui é o que abre redirect aberto.
+  const safeNext = safeRedirectPath(next);
 
   return (
     <AuthShell

@@ -20,6 +20,12 @@ detalhe do produto em tela cheia com quantidade. Nada de tela administrativa.
 Code e TAG NFC; o cliente monta o carrinho e pede; a equipe acompanha tudo em
 `/app/pedidos` sem recarregar.
 
+**Etapa 14 — produção (atual).** Ambientes separados por variável, domínio
+próprio com HTTPS e `www` canônico, CSP e headers de segurança, limite de
+requisições, páginas de 404/500 específicas para cardápio, mesa e casa suspensa,
+`/api/health` para diagnóstico e um cliente Supabase sem cookies que permite
+cachear o cardápio.
+
 **Etapa 13 — WhatsApp.** O restaurante liga um número em
 **Configurações → WhatsApp** e o cardápio público ganha um botão grande
 **💬 Falar no WhatsApp** que abre a conversa com a mensagem inicial já escrita.
@@ -119,11 +125,24 @@ Antes de publicar em produção, no Supabase:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>   # pública, protegida por RLS
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
+NEXT_PUBLIC_SITE_URL=https://cardapio.seudominio.com.br
+NEXT_PUBLIC_APP_ENV=production             # development | staging | production
 ```
+
+O `.env.example` lista todas, com o que quebra quando cada uma falta. Detalhe,
+checklist de domínio e diagnóstico em **[docs/AMBIENTES.md](docs/AMBIENTES.md)**.
 
 A `service_role key` **nunca** é usada na aplicação. Todo acesso a dados passa pelo
 cliente anon + cookies de sessão, e portanto por RLS.
+
+Para saber se a implantação está sã:
+
+```bash
+curl -s https://<domínio>/api/health | jq
+```
+
+O endpoint devolve **estado** (`set` / `missing` / `invalid`), nunca valor de
+variável — e com `HEALTH_CHECK_SECRET` configurado exige `Authorization: Bearer`.
 
 ---
 
@@ -909,6 +928,161 @@ mensagem, então religar traz o botão de volta. O que segue exigindo aparelho �
 
 ---
 
+## Produção (Etapa 14)
+
+Preparação para ambiente real: ambientes separados, domínio próprio, headers de
+segurança, limite de requisições, páginas de erro e diagnóstico. O passo a passo
+operacional está em **[docs/AMBIENTES.md](docs/AMBIENTES.md)**; aqui ficam as
+decisões.
+
+### Ambientes
+
+`NEXT_PUBLIC_APP_ENV` distingue os três, e existe porque **a Vercel roda staging
+com `NODE_ENV=production`**. Sem a variável, um preview se comportaria como
+produção: mandaria HSTS de um ano e redirecionaria `www` — num domínio de teste
+que ainda não tem todos os subdomínios em HTTPS, isso tranca o time fora.
+
+Staging compartilha o banco de produção (dívida consciente: plano gratuito, sem
+branch de banco). A consequência está escrita no doc: nada de migration
+destrutiva a partir de preview.
+
+### HTTPS, `www` e domínio canônico
+
+O middleware redireciona `http → https` (308) e `www.<domínio> → <domínio>`.
+As duas regras são desligadas em `development` e não se aplicam a
+`*.vercel.app` — sem essa guarda, um preview redirecionaria para fora de si
+mesmo.
+
+**HSTS exige produção *e* HTTPS real.** As duas condições, não uma: mandar HSTS
+numa resposta `http://` faz o navegador passar a exigir HTTPS naquele host, e
+`localhost` para de responder até alguém limpar o cache do navegador. Esse bug
+existiu no primeiro commit desta etapa e o harness pegou —
+`staticSecurityHeaders({ production: true, https: false })` não emite o header.
+
+### Ordem de decisão da origem pública
+
+Uma função (`resolveSiteOrigin`) responde por QR Code, `canonical`, sitemap e
+link de e-mail. Antes eram quatro implementações, e elas divergiam:
+
+1. `NEXT_PUBLIC_SITE_URL`, se válida (https fora de dev);
+2. o host da requisição, **se confiável** — domínio configurado, `*.vercel.app`,
+   localhost ou `TRUSTED_EXTRA_HOSTS`;
+3. nada, e o chamador decide.
+
+O passo 2 evita que esquecer a variável gere QR Code apontando para
+`menuvo.app`. O passo 3 existe porque devolver um domínio que não é o nosso é
+pior que devolver nada — QR Code errado só se descobre impresso. Testes cobrem
+host forjado, `http://` em produção e caminho na URL.
+
+### Headers de segurança e CSP
+
+`X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`,
+`Permissions-Policy` fechando câmera/microfone/geolocalização, HSTS em
+produção, `Cross-Origin-Opener-Policy` e CSP.
+
+A CSP tem **duas políticas**, e a diferença é deliberada:
+
+| Rota | `script-src` | Por quê |
+| --- | --- | --- |
+| app, admin, login | `'self' 'nonce-…' 'strict-dynamic'` | páginas já são dinâmicas; nonce sai de graça |
+| `/r/...` (cardápio) | `'self' 'unsafe-inline'` | ISR: nonce por resposta forçaria renderizar a cada visita |
+
+No cardápio, a proteção que não depende de nonce continua toda ativa:
+`object-src 'none'`, `base-uri 'self'`, `form-action 'self'`,
+`frame-ancestors 'none'` e `connect-src` limitado ao próprio site + Supabase.
+Trocar cache por nonce ali é o trade-off errado para um cardápio que precisa ser
+rápido no 3G do salão.
+
+Os headers estáveis também vivem no `next.config.ts`, porque o matcher do
+middleware exclui `sw.js`, `manifest.webmanifest` e `offline.html` de propósito
+(Etapa 12) — sem duplicar no config, essas rotas sairiam sem `nosniff`, e
+`offline.html` é justamente a página que aparece quando a rede caiu.
+
+### Limite de requisições
+
+`src/lib/rate-limit.ts`, contador em memória do processo:
+
+| Balde | Limite | Por quê |
+| --- | --- | --- |
+| login | 10 / 5 min | errar a senha 2–3 vezes é normal; força bruta deixa de valer a pena |
+| cadastro | 5 / hora | cadastro em massa polui o banco |
+| recuperar senha | 5 / hora | cada chamada custa e-mail e incomoda a caixa do usuário |
+| criar pedido | 30 / min | o banco já tem anti-duplicata; isto barra varredura de tokens |
+
+**É limite de rajada, não de cota.** Cada instância serverless tem o seu mapa, e
+reciclagem de instância esquece o histórico. Para garantia distribuída, um Redis
+atrás da mesma interface. Está escrito no topo do módulo porque o contrário seria
+prometer o que o código não faz.
+
+O cardápio público **não** é limitado: é cacheado, e todo mundo atrás do Wi-Fi
+do restaurante sai com o mesmo IP público — limitar ali puniria o cliente certo.
+
+### Páginas de erro
+
+| Situação | Arquivo | O que o visitante vê |
+| --- | --- | --- |
+| 404 genérico | `src/app/not-found.tsx` | "Página não encontrada" |
+| restaurante não encontrado | `src/app/r/[slug]/not-found.tsx` | "Cardápio não encontrado" |
+| mesa não encontrada | `src/app/r/[slug]/table/[token]/not-found.tsx` | "Não encontramos esta mesa" |
+| restaurante suspenso | `MenuUnavailable reason="suspended"` | "Cardápio temporariamente indisponível" |
+| 500 no cardápio | `src/app/r/[slug]/error.tsx` | "Não conseguimos abrir o cardápio" |
+| 500 no painel | `src/app/app/error.tsx`, `admin/error.tsx` | mantém sessão, oferece voltar |
+| 500 no layout raiz | `src/app/global-error.tsx` | página autossuficiente, CSS inline |
+
+Nenhuma mostra mensagem de exceção, stack ou nome de tabela. Só o `digest`, que
+casa com o log do servidor sem entregar o mapa do sistema a quem está olhando a
+tela.
+
+A tela de mesa é **a mesma** para token inválido, mesa desativada e casa
+fechada. Diferenciar transformaria o endereço num oráculo: bastaria varrer
+tokens para descobrir quais existem, e um token válido dá acesso ao pedido
+daquela mesa.
+
+### Performance do cardápio
+
+- **Cliente Supabase sem cookies** (`lib/supabase/public.ts`) para as leituras
+  públicas. `createClient()` lia `cookies()`, e no App Router ler cookie torna a
+  rota dinâmica — o cardápio nunca pôde ser cacheado. Continua sendo a anon key
+  com RLS: a diferença é não haver JWT de usuário, ou seja, o papel mais
+  restrito do banco.
+- **Code splitting** dos três painéis (detalhe, carrinho, garçom): só aparecem
+  depois de um toque.
+- `/_next/static` imutável por um ano (hash no nome), AVIF/WebP nas fotos,
+  cache de 31 dias para imagem de produto.
+- `console.log` removido do bundle de produção (`error`/`warn` ficam).
+
+**O cardápio passou de `ƒ` para `●`.** Foram **duas** causas, e eu só tinha
+achado a primeira:
+
+1. `createClient()` lia `cookies()` em toda leitura pública → cliente sem
+   cookies (`lib/supabase/public.ts`);
+2. `revalidate` sozinho não faz nada numa rota com parâmetro dinâmico que não
+   declara nenhum caminho — sem `generateStaticParams`, o Next não tem o que
+   pré-renderizar e trata a rota como dinâmica. Foi confirmado com uma rota de
+   teste: mesma página, `○`/`ƒ` sem a função e `●` com ela.
+
+O `build` mostra `● /r/[slug]  1m  1y`: ISR revalidando a cada minuto. A rota de
+mesa (`/r/[slug]/table/[token]`) continua `ƒ` de propósito — o token não é
+enumerável, e listá-lo num build seria expor as mesas de todo mundo.
+
+O `generateStaticParams` lista as casas publicadas no momento do build; casa que
+publicar depois entra na primeira visita e passa a ser cacheada igual. Falha de
+banco no build devolve lista vazia e a rota volta a ser dinâmica: degradar é
+melhor que não subir.
+
+### SEO
+
+`title` dinâmico (nome do restaurante), `description` composta de campos
+públicos com corte em 160 caracteres, Open Graph com `metadataBase`, favicon e
+ícones, `canonical` por cardápio, `robots.txt` bloqueando área autenticada e
+`sitemap.xml` listando só casas publicadas.
+
+`metadataBase` vem de `NEXT_PUBLIC_SITE_URL`, não de `headers()` — a primeira
+tentativa usou `headers()` e o custo apareceu no build: a rota virou dinâmica e
+o ISR morreu. Nunca expõe `settings`, e-mail da conta, id interno ou plano.
+
+---
+
 ## Rotas
 
 | Rota                                  | Descrição                                       |
@@ -947,6 +1121,7 @@ mensagem, então religar traz o botão de volta. O que segue exigindo aparelho �
 | `/admin/planos`                       | Catálogo: criar, editar, ativar, preço, limites |
 | `/admin/assinaturas`                  | Plano, status, período e trial de cada casa     |
 | `/manifest.webmanifest`               | **Manifesto do PWA** (Etapa 12)                 |
+| `/api/health`                         | **Diagnóstico da implantação** (Etapa 14)       |
 | `/sw.js`                              | **Service worker** — versão carimbada por hash  |
 | `/offline.html`                       | Tela de "sem conexão"                           |
 | `/app/configuracoes/whatsapp`         | **WhatsApp** — número, mensagem e botão (E13)   |
@@ -1013,6 +1188,7 @@ src/
 ├── lib/
 │   ├── data/           consultas server-side (RLS aplicada)
 │   ├── supabase/       client, server, middleware
+│   │                   public.ts: cliente sem cookies para leitura pública
 │   ├── types.ts        tipos de domínio
 │   ├── utils.ts        helpers
 │   ├── opening-hours.ts horário de funcionamento (fuso, meia-noite)
@@ -1032,6 +1208,10 @@ src/
 │   ├── pwa.ts          config do PWA: nome, cores, ícones, cache (Etapa 12)
 │   ├── whatsapp.ts     número, link wa.me e mensagem de pedido (neutro, E13)
 │   ├── whatsapp/       contrato do provedor (link hoje, Cloud API depois)
+│   ├── env.ts          ambientes, origem canônica, redirect seguro (E14)
+│   ├── site.ts         origem da requisição + metadataBase (server, E14)
+│   ├── rate-limit.ts   contadores por balde em memória (E14)
+│   ├── security-headers.ts CSP e headers por tipo de rota (E14)
 │   └── validation.ts   schemas Zod
 ├── sw-source.js        service worker (JS puro, versionado por hash)
 └── middleware.ts
@@ -1050,6 +1230,8 @@ supabase/migrations/    schema aplicado via Supabase
                         0012_plans_subscriptions.sql (Etapa 11)
                         0013_plan_catalog_and_trial_fix.sql (Etapa 11)
                         0014_whatsapp.sql (Etapa 13)
+docs/                    documentação interna
+└── AMBIENTES.md         ambientes, domínio, banco, storage, deploy, PWA
 public/
 ├── icons/              ícones do PWA (192, 512, maskable, apple-touch)
 └── offline.html        tela de "sem conexão"
@@ -1145,8 +1327,9 @@ scripts/                auditoria de layout + teste de RLS
 | ~~11~~ | ~~Planos e assinaturas~~        | ~~`plans`, `subscriptions`, limites por trigger — **concluída**~~ |
 | ~~12~~ | ~~PWA instalável e mobile first~~ | ~~manifest, service worker, ícones, offline — **concluída**~~ |
 | ~~13~~ | ~~WhatsApp: configuração e botão~~ | ~~`whatsapp_settings` + `wa.me` no cardápio — **concluída**~~ |
-| 14    | Cobrança real (gateway)         | `lib/billing` — Stripe/Mercado Pago/Asaas via `PAYMENT_PROVIDER` |
-| 15    | Publicação e produção           | domínios, observabilidade, cache                    |
+| ~~14~~ | ~~Preparação para produção~~     | ~~ambientes, domínio, CSP, rate limit, erros, health — **concluída**~~ |
+| 15    | Cobrança real (gateway)         | `lib/billing` — Stripe/Mercado Pago/Asaas via `PAYMENT_PROVIDER` |
+| —     | Observabilidade                 | Sentry/Datadog nos dois pontos de `console.error` já marcados |
 | —     | WhatsApp Business API           | `lib/whatsapp/provider.ts` + `whatsapp_messages` (estrutura pronta) |
 
 Pontos já preparados: o bucket de storage existe, o tema já é uma tabela por
