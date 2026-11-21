@@ -46,7 +46,28 @@ Scripts:
 | `npm run typecheck`    | TypeScript estrito, sem emitir                         |
 | `node scripts/audit-layout.mjs` | Auditoria mobile (overflow, viewport, alvos de toque) |
 
-### Variáveis de ambiente
+### Deploy
+
+Projeto **menuvo** na Vercel, conectado ao repositório
+(`polodogordin-cloud/plataforma-saas`). As variáveis `NEXT_PUBLIC_SUPABASE_URL` e
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` já estão configuradas para production/preview/development.
+
+```bash
+vercel              # deploy de preview
+vercel --prod       # deploy de produção
+```
+
+Se a URL `*.vercel.app` pedir login da Vercel, desative **Deployment Protection →
+Vercel Authentication** nas configurações do projeto.
+
+Antes de publicar em produção, no Supabase:
+
+- **Authentication → URL Configuration**: Site URL = domínio final; Redirect URLs
+  devem incluir `https://seu-dominio/**`.
+- **Authentication → Email**: ligue a confirmação de e-mail em produção (o fluxo já
+  trata o link em `/auth/callback`).
+
+## Variáveis de ambiente
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
