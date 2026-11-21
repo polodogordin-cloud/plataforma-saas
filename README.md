@@ -20,7 +20,17 @@ detalhe do produto em tela cheia com quantidade. Nada de tela administrativa.
 Code e TAG NFC; o cliente monta o carrinho e pede; a equipe acompanha tudo em
 `/app/pedidos` sem recarregar.
 
-**Etapa 11 — planos e assinaturas (atual).** O sistema virou SaaS comercial:
+**Etapa 13 — WhatsApp (atual).** O restaurante liga um número em
+**Configurações → WhatsApp** e o cardápio público ganha um botão grande
+**💬 Falar no WhatsApp** que abre a conversa com a mensagem inicial já escrita.
+A plataforma **não envia nada sozinha**: a estrutura da API oficial (fila,
+tipos, consentimento, texto do pedido) está pronta e desligada.
+
+**Etapa 12 — PWA instalável.** O cardápio e o painel instalam na tela inicial
+com manifest, ícones e service worker; abrem sem rede com `offline.html`; e a
+atualização nunca recarrega a página no meio de um pedido.
+
+**Etapa 11 — planos e assinaturas.** O sistema virou SaaS comercial:
 cada casa tem plano, limites e período. Básico, Profissional e Premium com preço,
 recursos e limites **editáveis pelo admin** — nenhum número mora no código. O
 limitador é um trigger no banco: a mesa 51 é recusada mesmo por API, e a tela
@@ -762,6 +772,129 @@ tela de aviso, e atualizar o app depois de um deploy.
 
 ---
 
+## WhatsApp (Etapa 13)
+
+O restaurante liga um WhatsApp e o cardápio público ganha o botão **Falar no
+WhatsApp**. Ao tocar, o WhatsApp abre com a mensagem inicial já escrita; quem
+envia é o cliente.
+
+### O que a integração é — e o que ela não é
+
+O mecanismo é o link `wa.me`, que é oficial e não precisa de API, token nem
+conta aprovada. A consequência precisa ser dita em voz alta, porque é onde a
+maioria das implementações mente para o dono do restaurante:
+
+| | `wa.me` (o que existe hoje) | WhatsApp Business API (o que não existe) |
+|---|---|---|
+| Quem envia | a pessoa, tocando no botão | o servidor |
+| O sistema sabe se saiu | **não** | sim (status de entrega/leitura) |
+| Recebe resposta | **não** | sim (webhook) |
+| Confirma pedido / avisa status | **não** | sim |
+| Precisa de | nada | número verificado, conta aprovada, template |
+
+Não há integração falsa: nenhuma função do sistema devolve "mensagem enviada"
+quando nada foi enviado. O provedor da API oficial existe como
+`unconfiguredCloudWhatsappProvider` e responde `provider_not_configured` — é o
+lembrete de que ligar a integração real é escrever `cloud.ts`, não trocar uma
+variável de ambiente.
+
+### Configuração
+
+Em `Configurações → WhatsApp`:
+
+- **número** — qualquer formato (`(11) 99999-0000`, `011 99999-0000`,
+  `+55 11 99999-0000`, `11 99999-0000 ramal 22`), normalizado para
+  `5511999990000`. O banco guarda o normalizado, nunca o texto digitado;
+- **mensagem inicial** — até 350 caracteres; a prévia mostra o link exato que o
+  cliente vai receber, com botão para copiar;
+- **interruptor** — desligar tira o botão do cardápio na hora, sem apagar
+  número nem mensagem.
+
+O número é validado duas vezes: em `src/lib/whatsapp.ts` (navegador, retorno
+imediato) e em `save_whatsapp_settings` (banco, incluindo DDD válido — 11 a 99,
+não múltiplo de 10). As duas implementações são testadas, e a do banco é a que
+decide.
+
+### O botão no cardápio
+
+Fica no rodapé do cardápio público (`/r/{slug}` e `/r/{slug}/table/{token}`),
+abaixo do cardápio e dos horários. Alvo de 56px, verde `#25d366` com texto
+escuro (contraste 8:1; texto branco nesse verde daria 1.9:1 e reprovaria AA).
+
+É um `<a href>`, não um `onClick`: funciona sem JavaScript, o toque longo
+oferece "copiar link" e leitor de tela anuncia o destino. O `aria-label` diz com
+quem é a conversa, e o texto **não** promete envio.
+
+### Quem pode ver
+
+O botão só aparece quando todas valem: interruptor ligado, número válido, casa
+publicada **e** plano com o recurso `whatsapp` (Profissional e Premium). A
+checagem do plano roda no banco (`public_whatsapp_config`), então ela não vira
+dado no HTML nem decisão da tela. Desligar o plano esconde o botão sem apagar a
+configuração — voltar o plano faz ele reaparecer.
+
+### Preparação para a API oficial
+
+A estrutura já existe e **nada a consome** (é o que o escopo pede):
+
+| Peça | Onde | Estado |
+| --- | --- | --- |
+| Fila de mensagens | `whatsapp_messages` | criada, `status = 'queued'`, sem processo que envie |
+| Tipos do escopo | enum `whatsapp_message_kind` | `order_created`, `order_status`, `order_confirmed`, `marketing`, `winback`, `contact` |
+| Idempotência | `dedupe_key` unique por casa | evita "pedido confirmado" em duplicidade |
+| Consentimento | `whatsapp_settings.terms_accepted_at` | gravado quando o canal é ligado; preservado ao desligar |
+| Texto do pedido | `buildOrderMessage()` | testado contra o exemplo do escopo; **não chamado na UI** |
+| Contrato do provedor | `src/lib/whatsapp/provider.ts` | `link` (hoje) e `cloud` (não configurado) |
+
+A mensagem de pedido — restaurante, número, mesa, itens, quantidades e total —
+está pronta e testada:
+
+```
+Olá, gostaria de informações sobre o pedido #1042.
+
+Mesa: 04
+
+2x X-Bacon
+1x Batata
+
+Total: R$ 79,70
+
+— Cantina da Praça
+```
+
+Ela **não é enviada em lugar nenhum nesta etapa**. Quando a Cloud API entrar, o
+provedor novo usa o mesmo `buildOrderMessage` e grava em `whatsapp_messages`;
+a tela não muda de contrato.
+
+### Segurança
+
+- `whatsapp_settings` tem RLS: `anon` não lê a tabela; `authenticated` só vê a
+  própria casa. O cardápio usa a RPC `public_whatsapp_config`, que devolve
+  **linha nenhuma** quando o botão não deve existir — não há "campo vazio" para
+  a tela interpretar errado.
+- A fila `whatsapp_messages` não tem policy de escrita: nenhum navegador forja
+  uma mensagem.
+- A Server Action ignora qualquer `restaurantId` do corpo e usa o vínculo ativo
+  do servidor; `save_whatsapp_settings` recusa quem não é admin da casa.
+- Nenhum token, chave ou credencial nesta etapa — não há integração que precise
+  de credencial. Quando houver, ela mora em variável de ambiente do servidor,
+  nunca no banco nem no frontend.
+
+### Verificação
+
+```bash
+node .arena-test/whatsapp-lib.cjs   # 103 · número, link, mensagem, recusas
+node .arena-test/whatsapp-ui.cjs    # 56 · botão e formulário em jsdom
+node .arena-test/whatsapp-ssr.cjs   # 57 · dados, formato da RPC, segurança
+```
+
+**Checklist que exige aparelho:** tocar no botão no Android e no iPhone e
+confirmar que o WhatsApp abre no número certo com a mensagem escrita; conferir
+que o teclado não cobre o campo; e desligar o canal para ver o botão sumir do
+cardápio aberto no celular.
+
+---
+
 ## Rotas
 
 | Rota                                  | Descrição                                       |
@@ -802,6 +935,7 @@ tela de aviso, e atualizar o app depois de um deploy.
 | `/manifest.webmanifest`               | **Manifesto do PWA** (Etapa 12)                 |
 | `/sw.js`                              | **Service worker** — versão carimbada por hash  |
 | `/offline.html`                       | Tela de "sem conexão"                           |
+| `/app/configuracoes/whatsapp`         | **WhatsApp** — número, mensagem e botão (E13)   |
 
 Fluxo principal: **cadastro → login automático → criar restaurante → dashboard**.
 O middleware do Supabase renova a sessão e exige login em `/app`,
@@ -882,6 +1016,8 @@ src/
 │   ├── plan-rules.ts   limites, uso e comparação de planos (neutro)
 │   ├── billing/        contrato de gateway de pagamento (Etapa 11)
 │   ├── pwa.ts          config do PWA: nome, cores, ícones, cache (Etapa 12)
+│   ├── whatsapp.ts     número, link wa.me e mensagem de pedido (neutro, E13)
+│   ├── whatsapp/       contrato do provedor (link hoje, Cloud API depois)
 │   └── validation.ts   schemas Zod
 ├── sw-source.js        service worker (JS puro, versionado por hash)
 └── middleware.ts
@@ -899,6 +1035,7 @@ supabase/migrations/    schema aplicado via Supabase
                         0011_platform_admin.sql (Etapa 10)
                         0012_plans_subscriptions.sql (Etapa 11)
                         0013_plan_catalog_and_trial_fix.sql (Etapa 11)
+                        0014_whatsapp.sql (Etapa 13)
 public/
 ├── icons/              ícones do PWA (192, 512, maskable, apple-touch)
 └── offline.html        tela de "sem conexão"
@@ -958,6 +1095,26 @@ scripts/                auditoria de layout + teste de RLS
 
 ---
 
+### WhatsApp
+
+- **`wa.me`, não API oficial.** O escopo proíbe integração falsa, e a diferença
+  importa: `wa.me` não envia, não recebe e não confirma nada. O botão diz "Falar
+  no WhatsApp", não "Enviar".
+- **O número é gravado normalizado.** Aceitar o texto cru faria cada leitura
+  reinterpretar o que o dono digitou — e um valor antigo inválido só apareceria
+  no dia em que o cliente tocasse no botão.
+- **O plano decide no banco.** `public_whatsapp_config` devolve linha nenhuma
+  quando o recurso não está no plano. A tela nunca decide autorização e o
+  catálogo comercial não vai para o HTML.
+- **Mensagem de pedido pronta, envio não.** `buildOrderMessage` existe com teste
+  e formato do escopo, mas não é chamada na interface: o pedido é do sistema, a
+  conversa é do cliente.
+- **Fila sem consumidor.** `whatsapp_messages` nasce com `status = 'queued'` e
+  nenhum processo que a leia. É estrutura, não funcionalidade — e o comentário
+  na migração diz isso.
+
+---
+
 ## Próximas etapas (já previstas na arquitetura)
 
 | Etapa | Escopo                          | Onde encaixa                                        |
@@ -973,8 +1130,10 @@ scripts/                auditoria de layout + teste de RLS
 | ~~10~~ | ~~Painel master do administrador~~ | ~~`platform_admins` + `/admin` — **concluída**~~ |
 | ~~11~~ | ~~Planos e assinaturas~~        | ~~`plans`, `subscriptions`, limites por trigger — **concluída**~~ |
 | ~~12~~ | ~~PWA instalável e mobile first~~ | ~~manifest, service worker, ícones, offline — **concluída**~~ |
-| 13    | Cobrança real (gateway)         | `lib/billing` — Stripe/Mercado Pago/Asaas via `PAYMENT_PROVIDER` |
-| 14    | Publicação e produção           | domínios, observabilidade, cache                    |
+| ~~13~~ | ~~WhatsApp: configuração e botão~~ | ~~`whatsapp_settings` + `wa.me` no cardápio — **concluída**~~ |
+| 14    | Cobrança real (gateway)         | `lib/billing` — Stripe/Mercado Pago/Asaas via `PAYMENT_PROVIDER` |
+| 15    | Publicação e produção           | domínios, observabilidade, cache                    |
+| —     | WhatsApp Business API           | `lib/whatsapp/provider.ts` + `whatsapp_messages` (estrutura pronta) |
 
 Pontos já preparados: o bucket de storage existe, o tema já é uma tabela por
 tenant, a função `has_restaurant_role` aceita o array de papéis permitidos (novos

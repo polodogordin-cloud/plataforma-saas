@@ -8,6 +8,8 @@ import { getPublicMenu, getPublicRestaurant } from "@/lib/data/public-menu";
 import { getPublicRestaurantState } from "@/lib/data/public-menu";
 import { MenuUnavailable } from "@/components/public/menu-unavailable";
 import { getPublicRestaurantTheme } from "@/lib/data/theme";
+import { getPublicWhatsappConfig } from "@/lib/data/whatsapp";
+import { WhatsappButton } from "@/components/public/whatsapp-button";
 import { resolveTableToken } from "@/lib/data/tables";
 import { getRestaurantTimezone } from "@/lib/data/timezone";
 import type { PublicRestaurant } from "@/lib/types";
@@ -64,10 +66,13 @@ export default async function TableMenuPage({ params }: { params: Promise<Params
     redirect(`/r/${restaurant.slug}`);
   }
 
-  const [menu, timeZone, theme] = await Promise.all([
+  const [menu, timeZone, theme, whatsapp] = await Promise.all([
     getPublicMenu(restaurant.id),
     getRestaurantTimezone(restaurant.id),
     getPublicRestaurantTheme(restaurant.id),
+    // WhatsApp (Etapa 13): canal alternativo quando o cliente prefere falar
+    // com uma pessoa em vez de montar o pedido no app.
+    getPublicWhatsappConfig(restaurant.slug),
   ]);
 
   return (
@@ -92,8 +97,24 @@ export default async function TableMenuPage({ params }: { params: Promise<Params
         theme={theme}
       />
 
-      <footer className="border-t border-[var(--mv-border)] bg-[var(--mv-surface)] pb-safe">
+      {/*
+        A barra de ações (Garçom · Carrinho · Conta) é fixa no rodapé, então o
+        conteúdo da página precisa de folga para o botão de WhatsApp não nascer
+        atrás dela. A folga acompanha a altura da barra + a área segura do
+        iPhone: 5.5rem cobre a barra com o rótulo de duas linhas.
+      */}
+      <footer className="border-t border-[var(--mv-border)] bg-[var(--mv-surface)] pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
         <div className="mx-auto w-full max-w-lg px-4 py-5 text-center">
+          {whatsapp && (
+            <div className="mb-5">
+              <WhatsappButton
+                config={whatsapp}
+                restaurantName={restaurant.name}
+                theme={theme}
+              />
+            </div>
+          )}
+
           <TableBadge name={context.table_name} />
           <p className="mt-3 text-xs text-[var(--mv-text-muted)]">
             {restaurant.name} · cardápio digital
