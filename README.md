@@ -20,7 +20,7 @@ detalhe do produto em tela cheia com quantidade. Nada de tela administrativa.
 Code e TAG NFC; o cliente monta o carrinho e pede; a equipe acompanha tudo em
 `/app/pedidos` sem recarregar.
 
-**Etapa 13 — WhatsApp (atual).** O restaurante liga um número em
+**Etapa 13 — WhatsApp.** O restaurante liga um número em
 **Configurações → WhatsApp** e o cardápio público ganha um botão grande
 **💬 Falar no WhatsApp** que abre a conversa com a mensagem inicial já escrita.
 A plataforma **não envia nada sozinha**: a estrutura da API oficial (fila,
@@ -866,6 +866,14 @@ Ela **não é enviada em lugar nenhum nesta etapa**. Quando a Cloud API entrar, 
 provedor novo usa o mesmo `buildOrderMessage` e grava em `whatsapp_messages`;
 a tela não muda de contrato.
 
+### Dado de demonstração
+
+O restaurante `famintos` tem uma configuração real em `whatsapp_settings`
+(número `5511987654321`, mensagem padrão, canal ligado). **Não é lixo de teste —
+é ela que mantém o botão visível no cardápio de produção**, e foi uma decisão
+consciente mantê-la. Remover essa linha tira o botão do ar; se for removê-la,
+remova sabendo disso.
+
 ### Segurança
 
 - `whatsapp_settings` tem RLS: `anon` não lê a tabela; `authenticated` só vê a
@@ -885,13 +893,19 @@ a tela não muda de contrato.
 ```bash
 node .arena-test/whatsapp-lib.cjs   # 103 · número, link, mensagem, recusas
 node .arena-test/whatsapp-ui.cjs    # 56 · botão e formulário em jsdom
-node .arena-test/whatsapp-ssr.cjs   # 57 · dados, formato da RPC, segurança
+node .arena-test/whatsapp-ssr.cjs   # 51 sem servidor · 57 com servidor
 ```
 
-**Checklist que exige aparelho:** tocar no botão no Android e no iPhone e
-confirmar que o WhatsApp abre no número certo com a mensagem escrita; conferir
-que o teclado não cobre o campo; e desligar o canal para ver o botão sumir do
-cardápio aberto no celular.
+O `whatsapp-ssr` só roda a parte HTTP quando encontra um servidor em
+`http://localhost:3000` (ou na URL passada como argumento); sem um, são 51
+checagens. `esbuild` e `jsdom` entram com `npm install --no-save`.
+
+**Conferido em aparelho** (Android e iPhone, cardápio de produção): tocar no
+botão abre o WhatsApp no número configurado com a mensagem já escrita; o
+formulário do painel fica utilizável com o teclado aberto; e desligar o canal
+remove o botão do cardápio em menos de um minuto — sem apagar número nem
+mensagem, então religar traz o botão de volta. O que segue exigindo aparelho é só
+*enviar* a mensagem: isso é do app do WhatsApp, não da plataforma.
 
 ---
 
