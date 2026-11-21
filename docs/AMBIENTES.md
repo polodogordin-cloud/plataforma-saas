@@ -141,6 +141,54 @@ o erro aparece na abertura de `/app/analytics` como
 `Your project's URL and Key are required to create a Supabase client`. Se essa
 frase aparecer num 500, é env faltando no ambiente, não a migration.
 
+### Cozinha e papéis (Etapa 17)
+
+`0017_kitchen.sql` adiciona dois valores ao enum `restaurant_member_role`
+(`kitchen`, `waiter`) e as tabelas do KDS. **Aplicar em dois passos**, e isso não
+é preferência: `alter type ... add value` não pode rodar na mesma transação em
+que o valor novo é usado (erro `55P04`). Num `supabase db push` isso costuma
+passar porque cada statement ganha sua transação; por MCP ou psql com `-1`,
+aplicar em blocos.
+
+Passo 1 (sozinho, uma vez):
+
+```sql
+alter type public.restaurant_member_role add value if not exists 'kitchen';
+alter type public.restaurant_member_role add value if not exists 'waiter';
+```
+
+Passo 2: o resto do arquivo. É idempotente (`create or replace`,
+`if not exists`, `drop policy if exists`).
+
+```sql
+-- conferir que a etapa 17 está aplicada
+select count(*) as funcoes
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and (p.proname like 'kds_can_%'
+       or p.proname in ('list_kitchen_orders', 'list_kitchen_stations',
+                        'get_kitchen_settings', 'set_kitchen_settings'));
+-- esperado: 8
+```
+
+**Nenhuma variável de ambiente nova.** O KDS usa o mesmo cliente Supabase. O
+som é gerado por Web Audio no navegador; não há arquivo de áudio para servir nem
+`media-src` para liberar na CSP.
+
+**Realtime:** `order_items` entra na publicação `supabase_realtime`. Se o KDS
+aparecer vazio e só atualizar ao recarregar, o primeiro lugar a olhar é a
+publicação:
+
+```sql
+select tablename from pg_publication_tables
+where pubname = 'supabase_realtime' and schemaname = 'public';
+-- precisa conter orders, order_items, order_status_events
+```
+
+**Atribuir o papel:** o suporte faz em `/admin/restaurantes/<id>` → Equipe →
+Alterar papel, ou via `admin_set_member_role`. O usuário precisa sair e entrar
+de novo (ou recarregar) porque o papel é lido do vínculo a cada requisição.
+
 ### Ao criar migration nova
 
 1. arquivo `NNNN_nome.sql` em `supabase/migrations/`;

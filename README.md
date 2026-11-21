@@ -1230,6 +1230,141 @@ o teste para 9/13.
 
 ---
 
+## Painel de cozinha (Etapa 17)
+
+KDS em `/kitchen`, para tablet Android. Lê e escreve **no sistema de pedidos que
+já existia** — não há tabela de pedido paralela, nem produto, nem mesa
+duplicada.
+
+### Os dois papéis novos, e por que só dois
+
+O escopo lista ADMIN, MANAGER, KITCHEN, STAFF e WAITER. Os três primeiros já
+existiam (`owner`/`admin`, `manager`, `staff`). Criar os cinco de novo seria
+duplicar a Etapa 10 e quebrar as policies que dependem de `is_restaurant_admin`.
+Entraram `kitchen` e `waiter`.
+
+A regra que os define: **papel novo é permissão menor, não maior.**
+
+| | Ver KDS | Aceitar/iniciar/pronto | Finalizar | Cancelar | Cardápio |
+| --- | --- | --- | --- | --- | --- |
+| owner / admin | sim | sim | sim | sim | sim |
+| manager | sim | sim | sim | sim | sim |
+| staff | sim | sim | sim | sim | **não** |
+| **kitchen** | sim | sim | sim | **não** | **não** |
+| **waiter** | sim | **não** | sim | **não** | **não** |
+
+Duas decisões explicam o resto:
+
+- **`kitchen` fica fora de `is_restaurant_admin`.** Se entrasse, a cozinha
+  poderia mudar preço e esconder produto — e aí não é mais cozinha.
+- **`waiter` não inicia preparo.** Quem leva o pedido à mesa não decide quando
+  a cozinha começou; se decidisse, o KDS perderia a única coisa que promete.
+  Mas ele **finaliza**, porque registrar a entrega é trabalho do salão.
+
+`cancelar` mantém exatamente a lista que já valia na Etapa 7
+(owner/admin/manager/staff). Nenhum papel perdeu poder; os dois novos é que não
+herdaram esse.
+
+A autorização foi para dentro de `set_order_status`, que agora decide pelo
+**status de destino**: a mesma regra vale para o KDS e para o painel do salão,
+sem segundo caminho de escrita.
+
+### Tempo: derivado, nunca digitado
+
+| Pergunta | Fonte | Por que não o atalho |
+| --- | --- | --- |
+| Há quanto tempo chegou? | `orders.created_at` | — |
+| Há quanto tempo está em preparo? | 1º evento `→ preparing` em `order_status_events` | `updated_at` muda a cada toque e **reiniciaria** o contador |
+| Está atrasado? | minutos desde `created_at` vs `late_after_minutes` da casa | medir desde o preparo esconde a espera do cliente |
+
+Pedido entregue ou cancelado nunca é "atrasado": vermelho em pedido que já saiu
+ensina a equipe a ignorar o vermelho.
+
+### Som e autoplay
+
+Dois bipes (880 Hz e 1174 Hz) via Web Audio — sem arquivo no bundle, sem
+depender de rede, sem passar por `media-src` da CSP.
+
+Navegador bloqueia áudio sem gesto do usuário. A função **devolve `false`** em
+vez de fingir que tocou, e a tela mostra "o navegador bloqueou o som, toque em
+Ativar som". Tocar em qualquer lugar libera o contexto. A preferência fica no
+`localStorage` **por restaurante** (o mesmo tablet pode servir duas casas) e o
+default é **ligado**: painel mudo na primeira abertura é pior que um som que
+alguém desliga.
+
+### Dois layouts, um componente
+
+| Largura | Layout | Motivo |
+| --- | --- | --- |
+| ≥ 1024px (tablet paisagem) | quatro colunas, scroll próprio | cards grandes, o pedido explícito do escopo |
+| < 1024px (celular **e tablet retrato**) | abas com contador | em 768px quatro colunas dariam ~180px cada e o nome do item quebraria em 3 linhas |
+
+O corte em `lg` e não `md` é deliberado: tablet em retrato também usa abas.
+
+### Estação: arquitetura sem a divisão completa
+
+`kitchen_stations` + `kitchen_station_categories` existem e funcionam. A ligação
+é por **categoria**, não por produto: "todas as bebidas vão para o bar" é uma
+linha, e produto novo em Bebidas cai no bar sozinho. Ligar produto a produto
+exigiria reconfigurar a cada item novo — e alguém esqueceria.
+
+Sem estação configurada, o KDS mostra tudo, que é o certo para a casa pequena. A
+view resolve `station_slug` no item; o filtro por estação é uma linha de SQL.
+
+**O que não entrou:** tela de cadastro de estação. As tabelas e o filtro estão
+prontos; a UI fica para quando alguém pedir a divisão.
+
+### Duas lacunas de dado que você deve conhecer
+
+1. **Adicionais não são gravados hoje.** Os grupos de opções existem desde a
+   Etapa 2, mas o cardápio público nunca ofereceu a escolha
+   (`#product-detail-options` está reservado e vazio). A tabela
+   `order_item_options` e o card do KDS já sabem desenhá-los; falta a Etapa 18
+   ligar a escolha no cardápio e passar os itens no `create_order`.
+2. **Observação por item existe no banco, mas o cliente não envia.**
+   `order_items.notes` está na view e o card mostra; hoje vem sempre vazio. A
+   observação do **pedido**, essa sim, é preenchida pelo cliente no carrinho e
+   aparece no card.
+
+Nada disso foi simulado com dado falso: o KDS mostra o que existe. Inventar
+"adicionais" para a cozinha acertar seria pior que não mostrar.
+
+### Tempo real
+
+Mesmo canal `orders:<restaurantId>` da Etapa 7, com `order_items` acrescentado
+**no mesmo canal**. O evento é o sinal, não o dado: ao receber, o painel relê
+pela RPC `list_kitchen_orders`, que traz estação e tempo de preparo. Montar o
+card a partir do payload perderia os dois.
+
+O relógio do contador roda em `setInterval` de 1 s e **não** consulta o banco —
+60 consultas por minuto por tablet derrubaria a cozinha.
+
+### Verificação
+
+```bash
+node .arena-test/kitchen-lib.cjs        # 89 · contador, urgência, colunas, filtros, som
+node .arena-test/kitchen-security.cjs   # 70 · RBAC, tenant, não-duplicação, acessibilidade
+node .arena-test/kitchen-ui.cjs         # 59 · card e painel reais em jsdom
+node .arena-test/kitchen-ssr.cjs        # 33 · primeiro paint do tablet
+```
+
+Fluxo validado **contra o banco real** (transação descartável, `anon` + claims
+de cada papel):
+
+| Passo | Resultado |
+| --- | --- |
+| cliente (`anon`) cria pedido pelo QR | pedido 1004 nasce `pending`, com observação |
+| `kitchen` vê o pedido | aparece em `list_kitchen_orders` com item, mesa e tempo |
+| `kitchen` aceita → prepara → pronto → entrega | 4 transições aceitas |
+| histórico | 5 eventos (`null→pending` … `ready→delivered`) |
+| `kitchen` tenta cancelar | **`role_forbidden`** |
+| `waiter` tenta aceitar | **`role_forbidden`** |
+| `waiter` entrega | aceito |
+| `kitchen` cria estação | **bloqueado pelo RLS** |
+| outro tenant | 0 linhas |
+
+---
+
 ## Rotas
 
 | Rota                                  | Descrição                                       |
@@ -1274,6 +1409,7 @@ o teste para 9/13.
 | `/app/configuracoes/whatsapp`         | **WhatsApp** — número, mensagem e botão (E13)   |
 | `/app/analytics`                      | **Relatórios do restaurante** (Etapa 16)        |
 | `/admin/analytics`                    | **Métricas globais da plataforma** (Etapa 16)   |
+| `/kitchen`                            | **Painel de cozinha (KDS)** — tablet, tempo real |
 
 Fluxo principal: **cadastro → login automático → criar restaurante → dashboard**.
 O middleware do Supabase renova a sessão e exige login em `/app`,
@@ -1481,6 +1617,7 @@ scripts/                auditoria de layout + teste de RLS
 | ~~13~~ | ~~WhatsApp: configuração e botão~~ | ~~`whatsapp_settings` + `wa.me` no cardápio — **concluída**~~ |
 | ~~14~~ | ~~Preparação para produção~~     | ~~ambientes, domínio, CSP, rate limit, erros, health — **concluída**~~ |
 | ~~16~~ | ~~Analytics e relatórios~~      | ~~`/app/analytics` + `/admin/analytics`, RPCs de agregação — **concluída**~~ |
+| ~~17~~ | ~~Painel de cozinha (KDS)~~     | ~~`/kitchen`, papéis `kitchen`/`waiter` — **concluída**~~ |
 | 15    | Cobrança real (gateway)         | `lib/billing` — Stripe/Mercado Pago/Asaas via `PAYMENT_PROVIDER` |
 | —     | Observabilidade                 | Sentry/Datadog nos dois pontos de `console.error` já marcados |
 | —     | WhatsApp Business API           | `lib/whatsapp/provider.ts` + `whatsapp_messages` (estrutura pronta) |

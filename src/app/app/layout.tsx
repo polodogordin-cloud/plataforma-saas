@@ -3,6 +3,7 @@ import { BottomNav } from "@/components/app/bottom-nav";
 import { SuspendedNotice } from "@/components/app/suspended-notice";
 import { SubscriptionNotice } from "@/components/app/subscription-notice";
 import { getActiveRestaurant, getSessionUser } from "@/lib/data/restaurants";
+import { ROLE_CAPABILITIES } from "@/lib/types";
 import { getMySubscription } from "@/lib/data/billing";
 import { SUBSCRIPTION_STATE_ALLOWS_ACCESS } from "@/lib/types";
 
@@ -59,11 +60,30 @@ export default async function AppLayout({
     );
   }
 
+  /*
+   * Etapa 17 — a navegação do salão não é a da cozinha.
+   *
+   * Quem tem o papel `kitchen` entra no `/app` só de passagem (login, aviso,
+   * link para o painel). Mostrar "Cardápio" e "Relatórios" para essa pessoa é
+   * convite para tocar num link que vai recusar. A barra fica reduzida a
+   * Início + Cozinha, e o painel da cozinha é o destino óbvio.
+   *
+   * Conveniência, não segurança: quem barra cardápio e relatório são
+   * `is_restaurant_admin` e as RPCs de analytics.
+   */
+  const capabilities = ROLE_CAPABILITIES[restaurant?.role ?? "staff"];
+  const kitchenOnly = restaurant?.role === "kitchen";
+
   return (
     <div className="min-h-dvh bg-ink-50">
       {/* pb: espaço para a navegação fixa + área segura do iOS */}
       <div className="pb-[calc(4.25rem+env(safe-area-inset-bottom))]">{children}</div>
-      <BottomNav />
+      <BottomNav
+        kitchenOnly={kitchenOnly}
+        showMenu={capabilities.manageMenu}
+        showOrders={capabilities.manageOrders}
+        showAnalytics={capabilities.viewAnalytics}
+      />
     </div>
   );
 }

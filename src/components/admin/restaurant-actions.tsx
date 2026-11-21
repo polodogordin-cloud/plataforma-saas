@@ -234,18 +234,23 @@ export function MemberRoleSheet({
 }: {
   open: boolean;
   onClose: () => void;
-  onConfirm: (role: "owner" | "admin" | "manager" | "staff") => void;
+  onConfirm: (role: "owner" | "admin" | "manager" | "staff" | "kitchen" | "waiter") => void;
   memberName: string;
   pending: boolean;
   error: string | null;
 }) {
-  const [role, setRole] = useState<"owner" | "admin" | "manager" | "staff">("staff");
+  const [role, setRole] =
+    useState<"owner" | "admin" | "manager" | "staff" | "kitchen" | "waiter">("staff");
 
   const options = [
     { id: "owner" as const, label: "Proprietário", hint: "Tudo, inclusive a equipe" },
     { id: "admin" as const, label: "Administrador", hint: "Tudo, inclusive a equipe" },
     { id: "manager" as const, label: "Gerente", hint: "Operação, sem gerenciar equipe" },
     { id: "staff" as const, label: "Equipe", hint: "Vê e opera o dia a dia" },
+    // Etapa 17: os dois papéis do painel de cozinha. O texto explica o recorte
+    // porque a diferença entre eles e `staff` é justamente o que NÃO podem.
+    { id: "kitchen" as const, label: "Cozinha", hint: "Só o painel da cozinha, sem cardápio" },
+    { id: "waiter" as const, label: "Garçom", hint: "Pedidos e entrega, sem cancelar" },
   ];
 
   return (

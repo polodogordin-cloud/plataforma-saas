@@ -642,14 +642,89 @@ export const THEME_IMAGE_LABEL: Record<ThemeImageKind, string> = {
  * mas não gerencia a equipe — no banco isso é `is_restaurant_admin` para o
  * operacional e `is_restaurant_owner_admin` para a equipe.
  */
-export type RestaurantRole = "owner" | "admin" | "manager" | "staff";
+export type RestaurantRole = "owner" | "admin" | "manager" | "staff" | "kitchen" | "waiter";
 
 export const RESTAURANT_ROLE_LABEL: Record<RestaurantRole, string> = {
   owner: "Proprietário",
   admin: "Administrador",
   manager: "Gerente",
   staff: "Equipe",
+  kitchen: "Cozinha",
+  waiter: "Garçom",
 };
+
+/**
+ * O que cada papel pode fazer **no painel**. Puramente descritivo: quem decide é
+ * o banco (`is_restaurant_admin`, `kds_can_*`). A tela usa isto para esconder
+ * botão que ia falhar — conveniência, nunca segurança.
+ *
+ * `kitchen` e `waiter` são os papéis da Etapa 17. O recorte deles é a razão de
+ * existirem: quem cozinha não mexe em cardápio, e quem atende não decide quando
+ * a comida saiu do fogo.
+ */
+export const ROLE_CAPABILITIES: Record<
+  RestaurantRole,
+  {
+    /** Cardápio, mesas, tema, configurações do restaurante. */
+    manageMenu: boolean;
+    /** Ver e operar o painel de pedidos do salão. */
+    manageOrders: boolean;
+    /** Relatórios financeiros. */
+    viewAnalytics: boolean;
+    /** Equipe e papéis. */
+    manageTeam: boolean;
+    /** Abrir o KDS. */
+    useKitchen: boolean;
+  }
+> = {
+  owner: {
+    manageMenu: true,
+    manageOrders: true,
+    viewAnalytics: true,
+    manageTeam: true,
+    useKitchen: true,
+  },
+  admin: {
+    manageMenu: true,
+    manageOrders: true,
+    viewAnalytics: true,
+    manageTeam: true,
+    useKitchen: true,
+  },
+  manager: {
+    manageMenu: true,
+    manageOrders: true,
+    viewAnalytics: true,
+    manageTeam: false,
+    useKitchen: true,
+  },
+  staff: {
+    manageMenu: false,
+    manageOrders: true,
+    viewAnalytics: false,
+    manageTeam: false,
+    useKitchen: true,
+  },
+  kitchen: {
+    manageMenu: false,
+    // O painel do salão mostra valores, contas e cancelamento — nada disso é
+    // assunto da cozinha. O lugar dela é `/kitchen`.
+    manageOrders: false,
+    viewAnalytics: false,
+    manageTeam: false,
+    useKitchen: true,
+  },
+  waiter: {
+    manageMenu: false,
+    manageOrders: true,
+    viewAnalytics: false,
+    manageTeam: false,
+    useKitchen: true,
+  },
+};
+
+/** Papéis que só enxergam a cozinha — a navegação deles é outra. */
+export const KITCHEN_ONLY_ROLES: RestaurantRole[] = ["kitchen"];
 
 /** Papel de quem enxerga a plataforma inteira (tabela `platform_admins`). */
 export type PlatformRole = "owner" | "admin";
@@ -1309,3 +1384,128 @@ export type AdminAnalyticsDay = {
 export type PaymentActionResult =
   | { ok: true; payment: OrderPayment }
   | { ok: false; error: string };
+
+/* ==========================================================================
+   Etapa 17 · Painel de cozinha (KDS)
+   ========================================================================== */
+
+/** As quatro colunas do KDS, na ordem em que a cozinha trabalha. */
+export type KitchenColumn = "new" | "preparing" | "ready" | "done";
+
+export const KITCHEN_COLUMNS: Array<{ id: KitchenColumn; label: string; hint: string }> = [
+  { id: "new", label: "Novos", hint: "Chegaram e ainda não entraram no fogo" },
+  { id: "preparing", label: "Em preparo", hint: "A cozinha está fazendo" },
+  { id: "ready", label: "Prontos", hint: "Esperando alguém levar à mesa" },
+  { id: "done", label: "Finalizados", hint: "Entregues ou cancelados" },
+];
+
+/**
+ * Mapeamento status → coluna.
+ *
+ * `pending` e `confirmed` caem juntos em "Novos" porque a diferença entre eles
+ * é se alguém da casa já *viu* o pedido, não se ele entrou na produção. Para a
+ * cozinha são os dois o mesmo estado: "ainda não comecei".
+ */
+export const KITCHEN_COLUMN_OF: Record<OrderStatus, KitchenColumn> = {
+  pending: "new",
+  confirmed: "new",
+  preparing: "preparing",
+  ready: "ready",
+  delivered: "done",
+  cancelled: "done",
+};
+
+/** Nível de urgência derivado do tempo, nunca de cor sozinha. */
+export type KitchenUrgency = "ok" | "warn" | "late";
+
+export const KITCHEN_URGENCY_LABEL: Record<KitchenUrgency, string> = {
+  ok: "No prazo",
+  warn: "Atenção",
+  late: "Atrasado",
+};
+
+/** Adicional escolhido no item (estrutura pronta; ver comentário na migration). */
+export type OrderItemOption = {
+  group_name: string;
+  name: string;
+  price_delta: number;
+  quantity: number;
+};
+
+/** Item como o KDS desenha: com observação, adicionais e estação. */
+export type KitchenOrderItem = {
+  id: string;
+  product_id: string | null;
+  name: string;
+  quantity: number;
+  subtotal: number;
+  notes: string | null;
+  category_id: string | null;
+  station_slug: string | null;
+  options: OrderItemOption[];
+};
+
+/** Pedido na tela da cozinha. */
+export type KitchenOrder = {
+  id: string;
+  restaurant_id: string;
+  table_id: string;
+  table_name: string;
+  order_number: number;
+  status: OrderStatus;
+  channel: OrderChannel;
+  total: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Primeiro instante em que o pedido entrou em preparo (do histórico). */
+  preparing_since: string | null;
+  items: KitchenOrderItem[];
+  item_count: number;
+};
+
+export type KitchenStation = {
+  id: string;
+  name: string;
+  slug: string;
+  kind: "prep" | "expedition";
+  sort_order: number;
+};
+
+export type KitchenSettings = {
+  late_after_minutes: number;
+  warn_after_minutes: number;
+};
+
+/** Filtros do KDS. `station` vazio = todas.
+ *
+ * `late` e `recent` não são recortes de status: são recortes de TEMPO, e por
+ * isso são aplicados depois do cálculo de urgência, no cliente — o servidor não
+ * precisa saber que horas são no fuso da casa.
+ */
+export type KitchenFilter = {
+  tableId: string | null;
+  station: string | null;
+  lateOnly: boolean;
+  recentOnly: boolean;
+};
+
+/** Uma ação do card, já com o status de destino. */
+export type KitchenAction = "accept" | "start" | "ready" | "finish" | "cancel";
+
+export const KITCHEN_ACTION_TARGET: Record<KitchenAction, OrderStatus> = {
+  accept: "confirmed",
+  start: "preparing",
+  ready: "ready",
+  finish: "delivered",
+  cancel: "cancelled",
+};
+
+/** Rótulo do botão. O escopo pede estas cinco palavras. */
+export const KITCHEN_ACTION_LABEL: Record<KitchenAction, string> = {
+  accept: "Aceitar",
+  start: "Iniciar preparo",
+  ready: "Pronto",
+  finish: "Finalizar",
+  cancel: "Cancelar",
+};

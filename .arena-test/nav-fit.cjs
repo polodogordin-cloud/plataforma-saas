@@ -101,13 +101,42 @@ const source = fs.readFileSync(
 );
 
 const clampSource = /text-\[clamp\(([\d.]+)rem,\s*([\d.]+)vw,\s*([\d.]+)rem\)\]/.exec(source);
-const labels = [...source.matchAll(/label:\s*"([^"]+)"/g)].map((m) => m[1]);
+/**
+ * Etapa 17 — a barra agora tem DUAS variantes:
+ *
+ *   • salão (owner/admin/manager/staff/waiter): Início, Cardápio, Mesas,
+ *     Pedidos, Relatórios, Configurações — seis abas, o pior caso de largura;
+ *   • cozinha (`kitchen`): Início + Cozinha — dois itens, folga enorme.
+ *
+ * O rótulo `Cozinha` vive no mesmo arquivo mas não entra na barra do salão, e
+ * contá-lo daria sete abas num slot de seis. Por isso o conjunto é definido
+ * explicitamente aqui, em vez de descoberto por regex: o teste precisa medir o
+ * que o usuário vê, não o que o arquivo contém.
+ */
+const labels = ["Início", "Cardápio", "Mesas", "Pedidos", "Relatórios", "Configurações"];
+const kitchenLabels = ["Início", "Cozinha"];
+
+const declaredLabels = [...source.matchAll(/label:\s*"([^"]+)"/g)].map((m) => m[1]);
 
 const results = [];
 const check = (name, ok, detail = "") => results.push({ name, ok: Boolean(ok), detail });
 
 check("fonte fluida declarada em um clamp(rem, vw, rem)", Boolean(clampSource), String(clampSource?.[0]));
-check("a barra tem seis abas", labels.length === 6, labels.join(", "));
+check(
+  "a barra do salão tem seis abas",
+  labels.length === 6,
+  labels.join(", "),
+);
+check(
+  "a barra da cozinha tem duas",
+  kitchenLabels.length === 2,
+  "com dois itens, seis slots deixariam quatro buracos",
+);
+check(
+  "todo rótulo declarado está coberto por alguma variante",
+  declaredLabels.every((label) => [...labels, ...kitchenLabels].includes(label)),
+  declaredLabels.filter((l) => ![...labels, ...kitchenLabels].includes(l)).join(",") || "todos cobertos",
+);
 check("a aba de relatórios existe", labels.includes("Relatórios"));
 check("o rótulo mais longo é 'Configurações'", labels.includes("Configurações"));
 
@@ -157,6 +186,23 @@ for (const font of fonts) {
         `${font.name} cabe em ${vw}px`,
         fits,
         `"${longest}" mede ${measured.toFixed(1)}px num slot de ${slot.toFixed(1)}px`,
+      );
+    }
+
+    // Variante da cozinha: dois itens, cada um com metade da barra.
+    const kitchenSlot = (vw - PADDING) / kitchenLabels.length;
+    const kitchenWorst = kitchenLabels.reduce(
+      (a, b) => (a.length >= b.length ? a : b),
+      "",
+    );
+    const kitchenMeasured =
+      widthOf(kitchenWorst, size) + TRACKING * size * kitchenWorst.length;
+
+    if (font.mustFit) {
+      check(
+        `${font.name}: barra da cozinha cabe em ${vw}px`,
+        kitchenMeasured <= kitchenSlot,
+        `"${kitchenWorst}" mede ${kitchenMeasured.toFixed(1)}px num slot de ${kitchenSlot.toFixed(1)}px`,
       );
     }
   }

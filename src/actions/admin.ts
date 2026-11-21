@@ -170,7 +170,9 @@ export async function updateRestaurant(input: unknown): Promise<AdminActionResul
 const memberRoleSchema = z.object({
   restaurantId: z.string().regex(UUID),
   userId: z.string().regex(UUID),
-  role: z.enum(["owner", "admin", "manager", "staff"]),
+  // Etapa 17: `kitchen` e `waiter` entram aqui para que o suporte consiga
+  // atribuir o papel. Sem isso, o KDS existiria sem ninguém capaz de usá-lo.
+  role: z.enum(["owner", "admin", "manager", "staff", "kitchen", "waiter"]),
 });
 
 export async function setMemberRole(input: unknown): Promise<AdminActionResult> {
