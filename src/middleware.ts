@@ -39,7 +39,21 @@ export const config = {
   matcher: [
     /*
      * Todas as rotas, exceto assets estáticos e imagens.
+     *
+     * Etapa 12 — as exclusões abaixo **não** são otimização, são correção:
+     *
+     *   • `manifest.webmanifest` e `sw.js` são o que o navegador busca para
+     *     instalar o app. Passando pelo middleware, cada busca criava um cliente
+     *     Supabase e um `getUser()` — e, com o Supabase fora do ar, a instalação
+     *     falhava por um erro que nada tem a ver com ela. Nenhum dos dois precisa
+     *     de sessão: o manifest é público por definição e o SW não vê cookies.
+     *
+     *   • `offline.html` é servido **justamente quando não há rede**. Se dependesse
+     *     do middleware, poderia virar um 500 em vez da tela de "sem conexão" —
+     *     exatamente no momento em que ela é a única coisa que o usuário vê.
+     *
+     * `icons/` já sai pela regra de extensões; está listado por clareza.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw\\.js$|manifest\\.webmanifest$|offline\\.html$|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
   ],
 };
