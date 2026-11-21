@@ -15,6 +15,7 @@ import {
   Plus,
   Store,
   UtensilsCrossed,
+  ChartNoAxesColumn,
 } from "lucide-react";
 import { AppHeader } from "@/components/app/app-header";
 import { OrderBoardCards } from "@/components/orders/order-board-cards";
@@ -63,6 +64,16 @@ const quickActions = [
     label: "Dados do restaurante",
     description: "Nome, logo, endereço",
     icon: Store,
+    primary: false,
+  },
+  // Etapa 16: relatórios. Fica também no acesso rápido (além da aba
+  // "Relatórios" da navegação) porque é a tela que o dono abre no fim do dia,
+  // quando entra pelo dashboard em vez de pela barra.
+  {
+    href: "/app/analytics",
+    label: "Relatórios",
+    description: "Vendas, produtos e horários",
+    icon: ChartNoAxesColumn,
     primary: false,
   },
 ] as const;
