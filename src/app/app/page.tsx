@@ -14,6 +14,7 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 import { AppHeader } from "@/components/app/app-header";
+import { OrderBoardCards } from "@/components/orders/order-board-cards";
 import { StatCard } from "@/components/app/stat-card";
 import { StatusToggle } from "@/components/app/status-toggle";
 import { PublicLink } from "@/components/app/public-link";
@@ -24,6 +25,7 @@ import {
   getRestaurantCounters,
   getSessionUser,
 } from "@/lib/data/restaurants";
+import { getOrderBoardCounts } from "@/lib/data/orders-panel";
 import { RESTAURANT_ROLE_LABEL } from "@/lib/types";
 import { firstName } from "@/lib/utils";
 
@@ -60,9 +62,11 @@ export default async function DashboardPage() {
   const restaurant = await getActiveRestaurant();
   if (!restaurant) redirect("/onboarding");
 
-  const [profile, counters] = await Promise.all([
+  const [profile, counters, orderCounts] = await Promise.all([
     getProfile(user.id),
     getRestaurantCounters(restaurant.id),
+    // Etapa 7: os três números do salão, numa RPC só.
+    getOrderBoardCounts(restaurant.id),
   ]);
 
   const greetingName = firstName(profile?.full_name) || "chef";
@@ -128,6 +132,9 @@ export default async function DashboardPage() {
         {/* Cardápio público: o que o cliente vê e como compartilhar */}
         <PublicLink slug={restaurant.slug} status={restaurant.status} />
 
+        {/* Etapa 7: pedidos em destaque, com atalho para cada aba do painel */}
+        <OrderBoardCards counts={orderCounts} />
+
         {/* Resumos */}
         <section aria-labelledby="resumo">
           <h2 id="resumo" className="sr-only">
@@ -161,7 +168,6 @@ export default async function DashboardPage() {
               icon={ClipboardList}
               href="/app/pedidos"
               tone="amber"
-              hint="Em breve"
             />
           </div>
         </section>
@@ -239,7 +245,7 @@ export default async function DashboardPage() {
         )}
 
         <p className="pb-2 text-center text-xs leading-relaxed text-ink-400">
-          Cardápio publicado · Mesas e pedidos chegam nas próximas etapas.
+          Cardápio, mesas e pedidos em produção.
         </p>
       </main>
     </>

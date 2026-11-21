@@ -405,3 +405,103 @@ export type CreatedOrder = {
   status: OrderStatus;
   created_at: string;
 };
+
+/* ==========================================================================
+   Etapa 7 · Painel de pedidos
+   ========================================================================== */
+
+/**
+ * Pedido como o painel da equipe enxerga.
+ *
+ * Vem de `restaurant_orders` (view com itens embutidos) via
+ * `list_restaurant_orders`. `item_count` é a soma das unidades, não o número
+ * de linhas: "3 itens" precisa casar com o que o cliente viu no carrinho.
+ */
+export type PanelOrder = {
+  id: string;
+  restaurant_id: string;
+  table_id: string;
+  table_name: string;
+  order_number: number;
+  status: OrderStatus;
+  channel: OrderChannel;
+  subtotal: number;
+  fees: number;
+  discount: number;
+  total: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  items: OrderItem[];
+  item_count: number;
+};
+
+/** Registro do histórico de status (append-only, escrito por trigger). */
+export type OrderStatusEvent = {
+  id: string;
+  order_id: string;
+  from_status: OrderStatus | null;
+  to_status: OrderStatus;
+  note: string | null;
+  actor_id: string | null;
+  created_at: string;
+};
+
+/** Abas do painel: cada uma é um recorte de status. */
+export type PanelTab = "new" | "preparing" | "ready" | "done";
+
+export const PANEL_TABS: Array<{
+  id: PanelTab;
+  label: string;
+  statuses: OrderStatus[];
+  /** Rótulo curto usado no card ("NOVO PEDIDO"). */
+  badge: string;
+}> = [
+  { id: "new", label: "Novos", statuses: ["pending"], badge: "Novo pedido" },
+  {
+    id: "preparing",
+    label: "Em preparo",
+    statuses: ["confirmed", "preparing"],
+    badge: "Em preparo",
+  },
+  { id: "ready", label: "Prontos", statuses: ["ready"], badge: "Pronto" },
+  {
+    id: "done",
+    label: "Finalizados",
+    statuses: ["delivered", "cancelled"],
+    badge: "Finalizado",
+  },
+];
+
+/** Rótulo do status como o painel fala: "NOVO PEDIDO", "EM PREPARO"... */
+export const ORDER_STATUS_BOARD_LABEL: Record<OrderStatus, string> = {
+  pending: "Novo pedido",
+  confirmed: "Confirmado",
+  preparing: "Em preparo",
+  ready: "Pronto",
+  delivered: "Entregue",
+  cancelled: "Cancelado",
+};
+
+/**
+ * Próxima ação de cada status, na ordem do fluxo.
+ *
+ * Pedido num status que já não pede ação (entregue/cancelado) não aparece:
+ * o painel não inventa botão.
+ */
+export const ORDER_NEXT_ACTION: Partial<
+  Record<OrderStatus, { status: OrderStatus; label: string }>
+> = {
+  pending: { status: "confirmed", label: "Confirmar pedido" },
+  confirmed: { status: "preparing", label: "Iniciar preparo" },
+  preparing: { status: "ready", label: "Marcar como pronto" },
+  ready: { status: "delivered", label: "Marcar como entregue" },
+};
+
+/** Status em que ainda faz sentido cancelar. */
+export const ORDER_CANCELLABLE: readonly OrderStatus[] = [
+  "pending",
+  "confirmed",
+  "preparing",
+  "ready",
+];
