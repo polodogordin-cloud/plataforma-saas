@@ -16,17 +16,21 @@ import { cn } from "@/lib/utils";
  * `#product-detail-options` é o encaixe reservado para os grupos de opções,
  * e o rodapé já calcula `preço unitário × quantidade` antes de qualquer extra.
  *
- * O botão "Adicionar ao pedido" NÃO grava nada ainda: o carrinho chega na
- * Etapa 6. Ele só confirma a escolha para a próxima camada, sem simular pedido.
+ * O botão "Adicionar ao pedido" entrega `(produto, quantidade)` ao carrinho e
+ * fecha o painel. Quem decide o que fazer é o cardápio: aqui não há chamada de
+ * rede, não há pedido — o envio só acontece na confirmação do carrinho.
  */
 export function ProductDetail({
   product,
   open,
   onClose,
+  onAdd,
 }: {
   product: PublicProduct | null;
   open: boolean;
   onClose: () => void;
+  /** Adiciona ao carrinho. Sem este callback o botão só confirma visualmente. */
+  onAdd?: (product: PublicProduct, quantity: number) => void;
 }) {
   const [mounted, setMounted] = useState(false);
   const [quantity, setQuantity] = useState(1);
@@ -227,16 +231,19 @@ export function ProductDetail({
               </div>
             </div>
 
-            {feedback && (
-              <p
-                role="status"
-                className="mt-3 rounded-xl bg-brand-50 px-3.5 py-2.5 text-center text-sm font-medium text-brand-800"
-              >
-                {feedback}
-              </p>
-            )}
           </div>
         </div>
+
+        {/* Aviso fica FORA da área rolável: se o cliente tocar o botão com a
+            página rolada até o fim, a mensagem não pode nascer escondida. */}
+        {feedback && (
+          <p
+            role="status"
+            className="shrink-0 bg-amber-50 px-4 py-2.5 text-center text-sm font-medium text-amber-800"
+          >
+            {feedback}
+          </p>
+        )}
 
         {/* Rodapé fixo */}
         <footer
@@ -247,10 +254,13 @@ export function ProductDetail({
             size="lg"
             block
             onClick={() => {
-              // Etapa 6 liga isto ao carrinho. Por ora, apenas confirma a escolha.
-              setFeedback(
-                `${quantity} ${quantity === 1 ? "item" : "itens"} · ${formatPrice(total)} — o carrinho chega na próxima etapa.`,
-              );
+              // Sem mesa (link sem QR/NFC) o cardápio continua navegável, mas
+              // não há para onde enviar: avisamos em vez de fingir um carrinho.
+              if (!onAdd) {
+                setFeedback("Abra o cardápio pelo QR Code da mesa para fazer pedidos.");
+                return;
+              }
+              onAdd(product, quantity);
             }}
             className="justify-between px-5"
           >

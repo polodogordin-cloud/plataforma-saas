@@ -277,6 +277,56 @@ Preparação (sem implementar): várias TAGs por mesa, substituição, históric
 identificação, ativação/desativação e QR + NFC na mesma placa já funcionam.
 Pedidos e pagamentos seguem fora de escopo.
 
+### Carrinho e criação de pedidos (Etapa 6)
+
+O cliente nunca digita dado sensível. Ele aponta a câmera (QR) ou encosta o
+celular (NFC), o cardápio abre com a mesa já resolvida e o fluxo anda em cinco
+passos: **escanear → escolher → adicionar → revisar → enviar**.
+
+| Objeto | Papel |
+| --- | --- |
+| `public.orders` | cabeçalho do pedido: mesa, número curto, status, totais, observação |
+| `public.order_items` | itens com `product_name_snapshot` e `unit_price_snapshot` |
+| `public.restaurant_order_counters` | contador por restaurante (`next_order_number`) |
+| `public.create_order(token, itens, obs)` | RPC `security definer` que valida e grava tudo |
+| `public.get_table_order(token, número)` | releitura do **próprio** pedido (tela de sucesso) |
+| `public.restaurant_orders` | view de leitura pronta para o painel da Etapa 7 |
+
+- **O preço nunca vem do frontend.** O corpo aceito pelo servidor é só
+  `{ product_id, quantity }` (+ observação). O `zod` descarta qualquer chave
+  extra e a RPC lê o preço de `public_products` — a mesma view que o cardápio
+  renderiza, que já filtra produto disponível, categoria ativa e restaurante
+  publicado. Mandar `price: 0.01` no corpo não muda um centavo do total.
+- **Snapshot, não ponteiro.** Nome e preço unitário são copiados para o item.
+  Mudar o preço do X-Bacon para R$ 99,90 depois não altera o pedido #1001: o
+  histórico do salão e o caixa continuam batendo.
+- **Mesa vem do token, sempre.** `create_order` resolve o token de novo a cada
+  envio — mesa desativada, token de outra mesa ou restaurante pausado são
+  recusados na hora. A tela nunca envia `table_id`.
+- **Número curto por casa**, começando em 1001, para o atendente chamar
+  "pedido 1001" em vez de um UUID.
+- **Nada de pedido parcial.** Quantidade fora de 1..99, item esgotado, carrinho
+  vazio ou observação acima de 300 caracteres abortam a transação inteira.
+- **Carrinho vive no cliente** (`localStorage`, por token de mesa): não existe
+  tabela de carrinho no banco. O que não foi enviado simplesmente não existe do
+  lado do servidor — e trocar de mesa abre outro carrinho.
+- **Anti-flood simples:** quatro pedidos da mesma mesa em 20 segundos bloqueiam
+  o quinto. Não substitui rate limit de infraestrutura, mas segura o duplo
+  toque e o script trivial.
+- **Status:** `pending → confirmed → preparing → ready → delivered`, mais
+  `cancelled`. O pedido nasce `pending` e fica assim até a equipe agir — por
+  isso a tela de sucesso diz **"Aguardando confirmação."**
+- **Tela de sucesso sobrevive ao reload.** O número fica no `localStorage` e o
+  conteúdo é relido por `get_table_order`, que só devolve pedido daquela mesa.
+- **`anon` não lê a tabela de pedidos.** A única porta é a RPC; a leitura por
+  membro da equipe passa pela RLS (painel na Etapa 7).
+
+Preparação (sem implementar): `channel` (`dine_in | takeaway | delivery`),
+`fees`, `discount`, `customer_name` e `customer_phone` já existem no schema, com
+`dine_in` e taxas zeradas. Adicionais, combos, pagamentos, Pix, WhatsApp,
+impressão, chamada de garçom e pedido de conta ficam para as próximas etapas —
+a interface reserva o encaixe (`#product-detail-options`) sem inventar regra.
+
 ---
 
 ---
@@ -296,12 +346,12 @@ Pedidos e pagamentos seguem fora de escopo.
 | `/app/cardapio`                       | Cardápio: categorias e produtos (Etapa 2)       |
 | `/app/cardapio/produtos`              | Lista completa de produtos com busca e filtros  |
 | `/r/[slug]`                           | **Cardápio público (sem login)**                |
-| `/r/[slug]/table/[token]`             | **Cardápio aberto pelo QR/NFC da mesa**         |
+| `/r/[slug]/table/[token]`             | **Cardápio + carrinho + pedido (QR/NFC)**       |
 | `/app/mesas`                          | Mesas: cartões, ativar/desativar, QR (Etapa 4)  |
 | `/app/mesas/[id]/qr`                  | Download do QR (`?format=png` ou `?format=svg`) |
 | `/app/mesas` (sheet NFC)              | TAGs da mesa: URL, status, histórico (Etapa 5)  |
 | `/sitemap.xml`, `/robots.txt`         | Indexação — só cardápios publicados             |
-| `/app/pedidos`                        | Pedidos — Etapa 6/7                             |
+| `/app/pedidos`                        | Pedidos — painel da equipe (Etapa 7)            |
 | `/app/configuracoes`                  | Hub de configurações                            |
 | `/app/configuracoes/conta`            | Conta do usuário                                |
 | `/app/configuracoes/restaurante`      | Dados do restaurante                            |
@@ -321,7 +371,9 @@ src/
 │   ├── restaurant.ts   criação e edição do restaurante
 │   ├── account.ts      perfil do usuário
 │   ├── menu.ts         categorias e produtos (CRUD, toggle, reordenação)
-│   └── tables.ts       mesas (CRUD, ativar/desativar, ocupação, novo token)
+│   ├── tables.ts       mesas (CRUD, ativar/desativar, ocupação, novo token)
+│   ├── nfc.ts          TAGs NFC das mesas
+│   └── orders.ts       criação e releitura de pedidos (Etapa 6)
 ├── app/
 │   ├── layout.tsx      metadata, viewport, manifest
 │   ├── page.tsx        landing
@@ -335,7 +387,8 @@ src/
 │   ├── menu/           Painel: MenuManager, CategoryCard, ProductCard,
 │   │                   sheets, ProductsBrowser, SortableProvider (dnd-kit)
 │   ├── public/         Cardápio do cliente: PublicHeader, PublicMenuView,
-│   │                   ProductRow, ProductDetail, TableBadge
+│   │                   ProductRow, ProductDetail, TableBadge,
+│   │                   CartProvider, CartBar, CartSheet, OrderSuccess
 │   ├── tables/         Painel de mesas: TablesManager, TableCard,
 │   │                   TableSheet, QrSheet, QrPrintCard,
 │   │                   NfcPanel, NfcSheet, NfcTagSheet, NfcStatusBadge
@@ -350,6 +403,7 @@ src/
 │   ├── qr.ts           gerador de QR Code (matriz, PNG, SVG) sem dependências
 │   ├── table-session.ts cookie de contexto da mesa (QR/NFC)
 │   ├── nfc.ts          resumo de TAGs por mesa (módulo neutro, uso no cliente)
+│   ├── cart.ts         regras do carrinho (módulo neutro, testável)
 │   └── validation.ts   schemas Zod
 └── middleware.ts
 supabase/migrations/    schema aplicado via Supabase
@@ -359,6 +413,7 @@ supabase/migrations/    schema aplicado via Supabase
                         0004_tables_qr.sql (Etapa 4)
                         0005_table_nfc.sql (Etapa 5)
                         0006_nfc_stale_and_replaced.sql (correções da Etapa 5)
+                        0007_orders.sql (Etapa 6)
 scripts/                auditoria de layout + teste de RLS
 ```
 
@@ -376,6 +431,10 @@ scripts/                auditoria de layout + teste de RLS
 - **Bottom nav fixa** com 5 destinos, ícone + rótulo e indicador ativo.
 - **Estados honestos**: telas não implementadas mostram “Em breve” com a etapa
   correspondente — nunca dados fictícios apresentados como reais.
+- **Total do pedido é do servidor.** A UI mostra uma estimativa enquanto o
+  cliente monta o carrinho (soma em centavos inteiros, para não aparecer
+  `113.60000000000001`), mas a tela de sucesso exibe o número que o banco
+  gravou. Quando os dois divergem, o banco está certo.
 - **Feedback de RLS**: mutações usam `.select()` e verificam se alguma linha mudou,
   para não reportar “salvo” quando a policy bloqueou a operação.
 - **QR Code impresso**: "Imprimir" usa uma raiz `.print-sheet` fora do fluxo da
@@ -396,9 +455,9 @@ scripts/                auditoria de layout + teste de RLS
 | ----- | ------------------------------- | --------------------------------------------------- |
 | ~~2~~ | ~~Categorias e produtos~~       | ~~`/app/cardapio` — **concluída**~~                 |
 | ~~3~~ | ~~Cardápio público~~            | ~~`/r/[slug]` — **concluída**~~                     |
-| 4     | Mesas + QR Code                 | `tables`; `/app/mesas`; lib de QR                   |
-| 5     | NFC                             | URLs curtas por mesa (`/t/:code`)                   |
-| 6     | Carrinho e pedidos              | `orders`, `order_items`; RLS + realtime             |
+| ~~4~~ | ~~Mesas + QR Code~~             | ~~`/app/mesas` + `/app/mesas/[id]/qr` — **concluída**~~ |
+| ~~5~~ | ~~NFC das mesas~~               | ~~TAGs da mesa (mesma URL do QR) — **concluída**~~  |
+| ~~6~~ | ~~Carrinho e pedidos~~          | ~~`orders`, `order_items`, `create_order` — **concluída**~~ |
 | 7     | Painel de pedidos               | `/app/pedidos`; Supabase Realtime                   |
 | 8     | Personalização do cardápio      | `restaurants.settings` (jsonb) + upload de logo     |
 | 9     | Planos e assinaturas            | `plans`, `subscriptions`; gate por `restaurant_id`   |

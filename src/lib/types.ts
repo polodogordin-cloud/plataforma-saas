@@ -310,3 +310,98 @@ export type NfcEvent = {
   created_at: string;
   actor_id: string | null;
 };
+
+/* ==========================================================================
+   Etapa 6 · Carrinho e pedidos
+   ========================================================================== */
+
+/**
+ * Estados do pedido, na ordem em que a cozinha caminha.
+ *
+ * `cancelled` fica fora da sequência: pode acontecer em qualquer ponto.
+ * O rótulo é o que o cliente lê na tela de sucesso e, na Etapa 7, no painel.
+ */
+export type OrderStatus =
+  | "pending"
+  | "confirmed"
+  | "preparing"
+  | "ready"
+  | "delivered"
+  | "cancelled";
+
+export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
+  pending: "Pendente",
+  confirmed: "Confirmado",
+  preparing: "Em preparo",
+  ready: "Pronto",
+  delivered: "Entregue",
+  cancelled: "Cancelado",
+};
+
+/** Texto de acompanhamento mostrado ao cliente, por status. */
+export const ORDER_STATUS_HINT: Record<OrderStatus, string> = {
+  pending: "Aguardando confirmação.",
+  confirmed: "Pedido confirmado pela casa.",
+  preparing: "Seu pedido está sendo preparado.",
+  ready: "Pedido pronto — já vai para a mesa.",
+  delivered: "Pedido entregue. Bom apetite!",
+  cancelled: "Este pedido foi cancelado. Chame um atendente.",
+};
+
+/**
+ * Canal do pedido. Só `dine_in` é usado nesta etapa: o resto é preparação
+ * para delivery/retirada, e o banco já tem a coluna com default.
+ */
+export type OrderChannel = "dine_in" | "takeaway" | "delivery";
+
+/**
+ * Item do carrinho — estado local, nunca enviado com preço.
+ *
+ * Guardamos uma cópia de nome/preço apenas para exibir enquanto o cliente
+ * navega. Ao enviar, vão somente `product_id` e `quantity`: o servidor relê
+ * o preço atual e recalcula o total (item 11 do escopo).
+ */
+export type CartItem = {
+  product_id: string;
+  name: string;
+  unit_price: number;
+  quantity: number;
+};
+
+/** Item de um pedido já gravado, como o banco devolve. */
+export type OrderItem = {
+  product_id: string | null;
+  /** Nome no momento do pedido: mudar o produto depois não reescreve isto. */
+  name: string;
+  unit_price: number;
+  quantity: number;
+  subtotal: number;
+  notes: string | null;
+};
+
+/** Pedido lido por `get_table_order` (tela de sucesso). */
+export type TableOrder = {
+  order_id: string;
+  order_number: number;
+  table_name: string;
+  status: OrderStatus;
+  subtotal: number;
+  fees: number;
+  discount: number;
+  total: number;
+  notes: string | null;
+  created_at: string;
+  items: OrderItem[];
+};
+
+/** Retorno de `create_order`. */
+export type CreatedOrder = {
+  order_id: string;
+  order_number: number;
+  table_name: string;
+  restaurant_id: string;
+  subtotal: number;
+  total: number;
+  status: OrderStatus;
+  created_at: string;
+};

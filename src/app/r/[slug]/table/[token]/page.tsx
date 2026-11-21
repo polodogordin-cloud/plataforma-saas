@@ -67,7 +67,16 @@ export default async function TableMenuPage({ params }: { params: Promise<Params
         tableName={context.table_name}
       />
 
-      <PublicMenuView menu={menu} tableName={context.table_name} />
+      {/*
+        Mesa vinda do QR/NFC: é a credencial do pedido. O token é revalidado no
+        servidor a cada envio (`create_order`), então a sessão nunca é confiada
+        só ao navegador.
+      */}
+      <PublicMenuView
+        menu={menu}
+        tableName={context.table_name}
+        tableToken={token}
+      />
 
       <footer className="border-t border-ink-200/70 bg-white pb-safe">
         <div className="mx-auto w-full max-w-lg px-4 py-5 text-center">

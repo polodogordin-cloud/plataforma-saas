@@ -5,7 +5,21 @@ import { Search, X, SearchX } from "lucide-react";
 import { ProductRow } from "@/components/public/product-row";
 import { ProductDetail } from "@/components/public/product-detail";
 import { FeaturedStrip } from "@/components/public/public-header";
-import type { PublicMenu, PublicMenuSection, PublicProduct } from "@/lib/types";
+import { CartProvider, useCart } from "@/components/public/cart-provider";
+import { CartBar } from "@/components/public/cart-bar";
+import { CartSheet } from "@/components/public/cart-sheet";
+import {
+  OrderSuccess,
+  lastOrderStorageKey,
+  readLastOrderNumber,
+} from "@/components/public/order-success";
+import { readTableOrder } from "@/actions/orders";
+import type {
+  PublicMenu,
+  PublicMenuSection,
+  PublicProduct,
+  TableOrder,
+} from "@/lib/types";
 import { cn, normalizeSearch } from "@/lib/utils";
 
 /** Distância do topo considerada "categoria atual" (capa + abas fixas). */
@@ -22,20 +36,105 @@ const SCROLL_OFFSET = 96;
 export function PublicMenuView({
   menu,
   tableName,
+  tableToken,
 }: {
   menu: PublicMenu;
-  /** Presente quando o acesso veio por QR Code/NFC. Reservado para o carrinho. */
+  /** Presente quando o acesso veio por QR Code/NFC: só aí é possível pedir. */
   tableName?: string | null;
+  /** Token da mesa (QR/NFC). Credencial do pedido; nunca digitado. */
+  tableToken?: string | null;
 }) {
+  return (
+    <CartProvider tableToken={tableToken ?? null} tableName={tableName ?? null}>
+      <MenuBody menu={menu} />
+    </CartProvider>
+  );
+}
+
+/** Esquece o último pedido desta mesa (evita reabrir o sucesso sem querer). */
+function forgetLastOrder(tableToken: string | null) {
+  if (!tableToken) return;
+  try {
+    window.localStorage.removeItem(lastOrderStorageKey(tableToken));
+  } catch {
+    /* modo privado: nada a limpar */
+  }
+}
+
+/**
+ * Corpo do cardápio, já dentro do carrinho.
+ *
+ * Três camadas na mesma tela, sem navegação: cardápio (base), carrinho +
+ * confirmação (painel) e sucesso (tela cheia depois do envio). Na volta do
+ * sucesso, o carrinho já foi limpo e o cliente continua de onde parou.
+ */
+function MenuBody({ menu }: { menu: PublicMenu }) {
+  const { addItem, count, canOrder, tableToken, quantityOf } = useCart();
+
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(menu.sections[0]?.id ?? null);
   const [selected, setSelected] = useState<PublicProduct | null>(null);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [sent, setSent] = useState<TableOrder | null>(null);
 
   const sectionRefs = useRef(new Map<string, HTMLElement>());
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const tabStripRef = useRef<HTMLDivElement>(null);
   /** Ignora o scroll-spy enquanto uma rolagem programática está em curso. */
   const programmaticUntil = useRef(0);
+
+  /**
+   * Depois de recarregar a página, a tela de sucesso volta sozinha.
+   *
+   * O número do último pedido fica no localStorage DESTA mesa; o conteúdo vem
+   * do banco por `get_table_order`. Se o pedido não existir mais (token
+   * trocado, mesa reimpressa), a chave é descartada e o cliente vê o cardápio —
+   * nunca dados inventados.
+   */
+  useEffect(() => {
+    if (!tableToken) return;
+    const number = readLastOrderNumber(tableToken);
+    if (!number) return;
+
+    let cancelled = false;
+
+    readTableOrder(tableToken, number).then((order) => {
+      if (cancelled) return;
+      if (order) setSent(order);
+      else forgetLastOrder(tableToken);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tableToken]);
+
+  /**
+   * Toque no `+` da linha: adiciona 1 unidade direto.
+   *
+   * Sem abrir o detalhe — é o caminho rápido de quem já sabe o que quer. O
+   * feedback é a própria barra do carrinho, que atualiza na hora.
+   */
+  const quickAdd = useCallback(
+    (product: PublicProduct) => {
+      addItem(product, 1);
+    },
+    [addItem],
+  );
+
+  /** Adiciona ao pedido e fecha o detalhe — feedback fica na barra do carrinho. */
+  const handleAdd = useCallback(
+    (product: PublicProduct, quantity: number) => {
+      addItem(product, quantity);
+      setSelected(null);
+    },
+    [addItem],
+  );
+
+  const backToMenu = () => {
+    setSent(null);
+    forgetLastOrder(tableToken);
+  };
 
   const normalizedQuery = query.trim().toLowerCase();
 
@@ -110,6 +209,13 @@ export function PublicMenuView({
   }, []);
 
   const clearSearch = () => setQuery("");
+
+  /* Tela de sucesso: substitui o cardápio até o cliente voltar.
+     Fica depois de todos os hooks — um return antes deles muda a ordem entre
+     renders e o React recusa ("Rendered fewer hooks than expected"). */
+  if (sent) {
+    return <OrderSuccess order={sent} tableToken={tableToken} onBackToMenu={backToMenu} />;
+  }
 
   return (
     <>
@@ -213,7 +319,13 @@ export function PublicMenuView({
             <ul className="mt-3 space-y-2">
               {searchResults?.flatMap((section) =>
                 section.products.map((product) => (
-                  <ProductRow key={product.id} product={product} onSelect={setSelected} />
+                  <ProductRow
+                    key={product.id}
+                    product={product}
+                    onSelect={setSelected}
+                    onQuickAdd={canOrder ? quickAdd : undefined}
+                    quantityInCart={canOrder ? quantityOf(product.id) : 0}
+                  />
                 )),
               )}
             </ul>
@@ -227,6 +339,8 @@ export function PublicMenuView({
               key={section.id}
               section={section}
               onSelect={setSelected}
+              onQuickAdd={canOrder ? quickAdd : undefined}
+              quantityOf={canOrder ? quantityOf : undefined}
               registerRef={(node) => {
                 if (node) sectionRefs.current.set(section.id, node);
                 else sectionRefs.current.delete(section.id);
@@ -249,6 +363,23 @@ export function PublicMenuView({
         product={selected}
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
+        // Sem mesa não existe pedido: o detalhe mostra o aviso do QR Code em
+        // vez de encher um carrinho que nunca sairia.
+        onAdd={canOrder ? handleAdd : undefined}
+      />
+
+      {/* Espaço para a última seção não ficar atrás da barra fixa. */}
+      {canOrder && count > 0 && <div className="h-24" aria-hidden="true" />}
+
+      <CartBar onOpen={() => setCartOpen(true)} />
+
+      <CartSheet
+        open={cartOpen}
+        onClose={() => setCartOpen(false)}
+        onSent={(order) => {
+          setCartOpen(false);
+          setSent(order);
+        }}
       />
     </>
   );
@@ -257,10 +388,14 @@ export function PublicMenuView({
 function Section({
   section,
   onSelect,
+  onQuickAdd,
+  quantityOf,
   registerRef,
 }: {
   section: PublicMenuSection;
   onSelect: (product: PublicProduct) => void;
+  onQuickAdd?: (product: PublicProduct) => void;
+  quantityOf?: (productId: string) => number;
   registerRef: (node: HTMLElement | null) => void;
 }) {
   return (
@@ -288,7 +423,13 @@ function Section({
 
       <ul className="space-y-2">
         {section.products.map((product) => (
-          <ProductRow key={product.id} product={product} onSelect={onSelect} />
+          <ProductRow
+            key={product.id}
+            product={product}
+            onSelect={onSelect}
+            onQuickAdd={onQuickAdd}
+            quantityInCart={quantityOf?.(product.id) ?? 0}
+          />
         ))}
       </ul>
     </section>

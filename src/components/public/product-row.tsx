@@ -8,15 +8,28 @@ import { cn } from "@/lib/utils";
  * Linha de produto do cardápio público.
  *
  * Formato de app de delivery: texto à esquerda, foto quadrada à direita.
- * O botão + é um atalho para abrir o detalhe com quantidade 1 — nunca adiciona
- * escondido, porque o cliente precisa ver as opções (adicionais na Etapa 7).
+ *
+ * Dois caminhos, de propósito:
+ *  - tocar no card abre o detalhe (descrição, foto grande, quantidade);
+ *  - tocar no `+` adiciona 1 unidade na hora, sem abrir nada.
+ *
+ * O `+` é o caminho rápido de quem já sabe o que quer. Ele só aparece quando
+ * existe mesa na sessão (`onQuickAdd` presente): sem QR/NFC não há pedido,
+ * então o toque leva ao detalhe em vez de encher um carrinho que não vai sair.
+ * A quantidade já no carrinho aparece no canto do botão — sem abrir o painel.
  */
 export function ProductRow({
   product,
   onSelect,
+  onQuickAdd,
+  quantityInCart = 0,
 }: {
   product: PublicProduct;
   onSelect: (product: PublicProduct) => void;
+  /** Ausente = sem mesa na sessão (cardápio aberto pelo link). */
+  onQuickAdd?: (product: PublicProduct) => void;
+  /** Unidades deste produto já no carrinho. */
+  quantityInCart?: number;
 }) {
   return (
     <li>
@@ -74,8 +87,12 @@ export function ProductRow({
 
         <button
           type="button"
-          onClick={() => onSelect(product)}
-          aria-label={`Adicionar ${product.name}`}
+          onClick={() => (onQuickAdd ? onQuickAdd(product) : onSelect(product))}
+          aria-label={
+            onQuickAdd
+              ? `Adicionar ${product.name} ao pedido`
+              : `Ver ${product.name}`
+          }
           className={cn(
             "absolute bottom-2.5 right-2.5 grid size-10 place-items-center rounded-full",
             "bg-brand-600 text-white shadow-[0_6px_14px_-6px_rgba(15,146,80,0.9)]",
@@ -84,6 +101,14 @@ export function ProductRow({
           )}
         >
           <Plus className="size-5" aria-hidden="true" strokeWidth={2.5} />
+          {quantityInCart > 0 && (
+            <span
+              className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-ink-900 px-1 text-[0.7rem] font-bold tabular-nums text-white ring-2 ring-white"
+              aria-hidden="true"
+            >
+              {quantityInCart}
+            </span>
+          )}
         </button>
       </div>
     </li>
