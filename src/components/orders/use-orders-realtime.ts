@@ -88,6 +88,26 @@ export function useOrdersRealtime({
           notify("order_status_events", "INSERT");
         },
       )
+      /*
+       * Etapa 17 — `order_items` no MESMO canal.
+       *
+       * O KDS precisa saber que um item entrou num pedido que já está na tela
+       * (mesa que pede mais uma rodada). Assinar isto num canal separado
+       * abriria um segundo WebSocket no tablet da cozinha, que fica ligado o
+       * turno inteiro — e dois canais para a mesma tabela de pedidos é
+       * exatamente a duplicação que o escopo proíbe.
+       *
+       * O painel do salão recebe o mesmo evento e relê a lista; o custo é uma
+       * consulta a mais num caso raro (item adicionado a pedido existente).
+       */
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "order_items" },
+        () => {
+          if (!active) return;
+          notify("order_items", "INSERT");
+        },
+      )
       .subscribe((status) => {
         if (!active) return;
 

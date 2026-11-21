@@ -78,12 +78,33 @@ const quickActions = [
   },
 ] as const;
 
-export default async function DashboardPage() {
+/**
+ * Avisos que chegam por querystring de outros pontos do app.
+ *
+ * Existem para o redirecionamento **não** ser silencioso. Quem tentou abrir
+ * `/kitchen` sem permissão e volta para cá precisa entender por quê — um
+ * retorno mudo parece bug e vira chamado de suporte.
+ */
+const AVISOS: Record<string, string> = {
+  "sem-acesso-cozinha":
+    "Sua conta não tem acesso ao painel da cozinha. Peça ao administrador do restaurante para ajustar seu perfil.",
+  "casa-suspensa":
+    "O restaurante está suspenso. Fale com o suporte da plataforma para reativar.",
+};
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ aviso?: string }>;
+}) {
   const user = await getSessionUser();
   if (!user) redirect("/entrar?next=/app");
 
   const restaurant = await getActiveRestaurant();
   if (!restaurant) redirect("/onboarding");
+
+  const { aviso } = await searchParams;
+  const avisoTexto = aviso ? AVISOS[aviso] : undefined;
 
   const [profile, counters, orderCounts, requestCounts, isAdmin] = await Promise.all([
     getProfile(user.id),
@@ -123,6 +144,15 @@ export default async function DashboardPage() {
       />
 
       <main className="app-shell space-y-5 px-4 pb-6 pt-5">
+        {avisoTexto && (
+          <p
+            role="alert"
+            className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-sm font-medium text-amber-900"
+          >
+            {avisoTexto}
+          </p>
+        )}
+
         {/* Saudação + status */}
         <section className="animate-fade-in">
           <p className="text-sm text-ink-500">Olá, {greetingName} 👋</p>

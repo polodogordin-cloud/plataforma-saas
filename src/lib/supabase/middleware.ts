@@ -45,6 +45,11 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/app") ||
     pathname.startsWith("/onboarding") ||
     pathname.startsWith("/configuracoes") ||
+    // Etapa 17: a cozinha é área autenticada, mas fora de `/app` — o KDS não
+    // usa a navegação do salão. Só exige sessão aqui; o papel é decidido na
+    // página e, de novo, nas RPCs.
+    pathname === "/kitchen" ||
+    pathname.startsWith("/kitchen/") ||
     pathname === "/admin" ||
     pathname.startsWith("/admin/");
 

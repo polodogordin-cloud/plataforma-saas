@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BookOpenText,
   ChartNoAxesColumn,
+  ChefHat,
   ClipboardList,
   Home,
   Settings,
@@ -82,8 +83,41 @@ const LABEL_SIZE = "text-[clamp(0.45rem,2.15vw,0.62rem)]";
  * Navegação inferior fixa — pensada para uso com uma mão.
  * Alvos de 56px+, ícone + rótulo, respeitando a área segura do iPhone.
  */
-export function BottomNav() {
+export function BottomNav({
+  kitchenOnly = false,
+  showMenu = true,
+  showOrders = true,
+  showAnalytics = true,
+}: {
+  /** Papel `kitchen`: a barra vira Início + Cozinha. */
+  kitchenOnly?: boolean;
+  showMenu?: boolean;
+  showOrders?: boolean;
+  showAnalytics?: boolean;
+} = {}) {
   const pathname = usePathname();
+
+  /**
+   * Recorte por papel (Etapa 17).
+   *
+   * A regra que importa aqui não é "esconder por esconder": é não oferecer um
+   * caminho que o backend vai recusar. Se a cozinha vê o link de Cardápio, ela
+   * toca, recebe erro e conclui que o sistema está quebrado.
+   *
+   * `kitchenOnly` troca a barra inteira, e não só filtra: com dois itens, seis
+   * slots deixariam quatro buracos.
+   */
+  const items = kitchenOnly
+    ? [
+        NAV_ITEMS[0]!,
+        { href: "/kitchen", label: "Cozinha", icon: ChefHat, exact: true },
+      ]
+    : NAV_ITEMS.filter((item) => {
+        if (item.href === "/app/cardapio") return showMenu;
+        if (item.href === "/app/pedidos") return showOrders;
+        if (item.href === "/app/analytics") return showAnalytics;
+        return true;
+      });
 
   return (
     <nav
@@ -92,7 +126,7 @@ export function BottomNav() {
       style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0px)" }}
     >
       <ul className="app-shell flex items-stretch justify-between px-0.5">
-        {NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const active = item.exact
             ? pathname === item.href
             : pathname === item.href || pathname.startsWith(`${item.href}/`);
