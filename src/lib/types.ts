@@ -59,3 +59,38 @@ export const RESTAURANT_ROLE_LABEL: Record<RestaurantRole, string> = {
   admin: "Administrador",
   staff: "Equipe",
 };
+
+/* ==========================================================================
+   Etapa 2 · Categorias e produtos
+   ========================================================================== */
+
+export type Category = {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  is_active: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Product = {
+  id: string;
+  restaurant_id: string;
+  category_id: string | null;
+  name: string;
+  description: string | null;
+  price: number;
+  image_url: string | null;
+  is_available: boolean;
+  is_featured: boolean;
+  internal_code: string | null;
+  position: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Categoria + seus produtos, na ordem de exibição. */
+export type CategoryWithProducts = Category & { products: Product[] };

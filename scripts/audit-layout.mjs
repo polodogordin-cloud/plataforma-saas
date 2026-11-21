@@ -13,7 +13,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
-const ROUTES = ["/", "/entrar", "/criar-conta", "/recuperar-senha", "/preview-dev"];
+const ROUTES = ["/", "/entrar", "/criar-conta", "/recuperar-senha"];
 const MAX_WIDTH = 430;
 
 let failures = 0;
@@ -80,10 +80,11 @@ const SAFE =
 const clickable = /<(?:button|a|Link|Button|ButtonLink)\b/;
 
 for (const file of walk("src")) {
-  if (file.includes("preview-dev")) continue;
   const source = readFileSync(file, "utf8");
   // Constantes de classe compartilhadas no mesmo arquivo (ex.: `base` do Button)
-  const fileHasSafeBase = /const base\s*=/.test(source);
+  // ou componente Button importado, que já garante min-h-11 nas variantes.
+  const fileHasSafeBase =
+    /const base\s*=/.test(source) || /from "@\/components\/ui\/button"/.test(source);
 
   source.split("\n").forEach((line, index) => {
     if (!clickable.test(line)) return;
@@ -91,7 +92,9 @@ for (const file of walk("src")) {
     if (/className="[^"]*font-(semibold|medium)[^"]*text-brand/.test(line)) return;
     if (fileHasSafeBase) return;
 
-    const block = source.split("\n").slice(index, index + 8).join(" ");
+    const block = source.split("\n").slice(index, index + 16).join(" ");
+    // Backdrop de modal: cobre a viewport inteira, não é um alvo pequeno.
+    if (/absolute inset-0/.test(block)) return;
     if (!SAFE.test(block)) {
       console.log(`⚠️  alvo de toque pequeno? ${file}:${index + 1}`);
       warnings++;

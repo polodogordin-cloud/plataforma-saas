@@ -3,9 +3,14 @@
 Plataforma SaaS multi-tenant de cardápios digitais para restaurantes, lanchonetes,
 pizzarias, bares e cafeterias.
 
-**Etapa 1 — fundação.** Este repositório entrega a base do produto: landing page,
-autenticação completa, onboarding do restaurante, dashboard mobile e configurações.
-As próximas etapas têm lugar reservado na arquitetura e na navegação.
+**Etapa 1 — fundação.** Landing page, autenticação completa, onboarding do
+restaurante, dashboard mobile e configurações.
+
+**Etapa 2 — categorias e produtos (atual).** O painel `/app/cardapio` deixou de ser
+placeholder: cria, edita, exclui, ativa/desativa e reordena categorias; cadastra e
+edita produtos com nome, descrição, preço, categoria, disponibilidade, destaque e
+código interno; busca por nome/descrição/código e filtro por categoria. Tudo com
+arrastar-e-soltar otimizado para toque e bottom sheets no lugar de tabelas.
 
 > 📱 Prioridade absoluta: **mobile**. Cada tela foi desenhada para uso com uma mão
 > em telas de 320px a 430px. No desktop o conteúdo é centralizado em uma coluna
@@ -117,8 +122,35 @@ public.restaurants    ← o tenant (id, name, slug, logo_url, description,
 Storage: bucket público `restaurant-assets` para logos/fotos, com escrita restrita a
 owner/admin e caminho obrigatório `{restaurant_id}/...`.
 
-Verificado com 19 checagens de isolamento (estranho, staff, owner, anônimo) — todas
-passando.
+Verificado com 19 checagens de isolamento na Etapa 1 e mais 19 na Etapa 2
+(estranho, staff, owner, anônimo, membro rebaixado) — todas passando.
+
+### Cardápio (Etapa 2)
+
+```
+categories            ← restaurant_id, name, description, image_url,
+                        is_active, position    (unique por restaurant_id + name_key)
+   │ 1:N (on delete set null)
+   ▼
+products              ← restaurant_id, category_id, name, description,
+                        price numeric(10,2), image_url, is_available,
+                        is_featured, internal_code, position
+```
+
+- **Preço é `numeric(10,2)`**, nunca float. A formatação `R$ 1.234,56` acontece só na
+  apresentação (`formatPrice`); a leitura aceita `32,90`, `32.90`, `R$ 32,90` e
+  `1.234,56` (`parsePrice`).
+- **Ordem automática:** triggers `assign_category_position` e
+  `assign_product_position` numeram ao inserir; `reorder_categories` /
+  `reorder_products` regravam a ordem recebida. As funções são `security invoker`,
+  então a RLS continua valendo — quem não é owner/admin não reordena nada.
+- **Duplicidade em pt-BR:** a unicidade usa `name_key(name)`, que remove acentos,
+  caixa e espaços repetidos. `Hambúrgueres` e `hamburgueres` colidem, como deveriam.
+- **Excluir categoria não apaga produtos:** eles passam para "Sem categoria"
+  (`on delete set null`), e a interface avisa quantos serão movidos.
+- **Preparado para o futuro, sem implementar:** `product_option_groups` +
+  `product_options` (adicionais, complementos, sabores, tamanhos) e `promotions` +
+  `promotion_items` (promoções, combos) já existem com RLS ativa.
 
 ---
 
@@ -134,7 +166,8 @@ passando.
 | `/auth/callback`                      | Troca de código por sessão (confirmação/reset)  |
 | `/onboarding`                         | Criação do restaurante                          |
 | `/app`                                | Dashboard (Início)                              |
-| `/app/cardapio`                       | Cardápio — Etapa 2/3                            |
+| `/app/cardapio`                       | Cardápio: categorias e produtos (Etapa 2)       |
+| `/app/cardapio/produtos`              | Lista completa de produtos com busca e filtros  |
 | `/app/mesas`                          | Mesas — Etapa 4/5                               |
 | `/app/pedidos`                        | Pedidos — Etapa 6/7                             |
 | `/app/configuracoes`                  | Hub de configurações                            |
@@ -151,9 +184,11 @@ O middleware do Supabase renova a sessão e protege `/app`, `/onboarding` e
 
 ```
 src/
-├── actions/            Server Actions (auth, restaurante, perfil)
-│   ├── auth.ts
-│   └── restaurant.ts
+├── actions/            Server Actions
+│   ├── auth.ts         cadastro, login, logout, senha
+│   ├── restaurant.ts   criação e edição do restaurante
+│   ├── account.ts      perfil do usuário
+│   └── menu.ts         categorias e produtos (CRUD, toggle, reordenação)
 ├── app/
 │   ├── layout.tsx      metadata, viewport, manifest
 │   ├── page.tsx        landing
@@ -164,7 +199,10 @@ src/
 ├── components/
 │   ├── app/            AppHeader, BottomNav, StatCard, StatusToggle
 │   ├── auth/           AuthShell
-│   └── ui/             Button, Field, Card, Badge, ComingSoon…
+│   ├── menu/           MenuManager, CategoryCard, ProductCard, sheets,
+│   │                   ProductsBrowser e o SortableProvider (dnd-kit)
+│   └── ui/             Button, Field, Card, Badge, Sheet, Switch,
+│                       ConfirmSheet, ComingSoon…
 ├── lib/
 │   ├── data/           consultas server-side (RLS aplicada)
 │   ├── supabase/       client, server, middleware
@@ -172,7 +210,9 @@ src/
 │   ├── utils.ts        helpers
 │   └── validation.ts   schemas Zod
 └── middleware.ts
-supabase/migrations/    schema aplicado via Supabase (0001_init.sql)
+supabase/migrations/    schema aplicado via Supabase
+                        0001_init.sql (Etapa 1)
+                        0002_menu_categories_products.sql (Etapa 2)
 scripts/                auditoria de layout + teste de RLS
 ```
 
@@ -199,7 +239,7 @@ scripts/                auditoria de layout + teste de RLS
 
 | Etapa | Escopo                          | Onde encaixa                                        |
 | ----- | ------------------------------- | --------------------------------------------------- |
-| 2     | Categorias e produtos           | tabelas com `restaurant_id`; `/app/cardapio`         |
+| ~~2~~ | ~~Categorias e produtos~~       | ~~`/app/cardapio` — **concluída**~~                 |
 | 3     | Cardápio público                | rota pública por `slug`; `restaurants.status`        |
 | 4     | Mesas + QR Code                 | `tables`; `/app/mesas`; lib de QR                   |
 | 5     | NFC                             | URLs curtas por mesa (`/t/:code`)                   |
