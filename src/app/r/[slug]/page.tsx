@@ -7,6 +7,8 @@ import { PublicMenuView } from "@/components/public/public-menu";
 import { ThemeScope } from "@/components/public/themed";
 import { getPublicMenu, getPublicRestaurant, getPublicRestaurantState } from "@/lib/data/public-menu";
 import { getPublicRestaurantTheme } from "@/lib/data/theme";
+import { getPublicWhatsappConfig } from "@/lib/data/whatsapp";
+import { WhatsappButton } from "@/components/public/whatsapp-button";
 import { describeWeek, readOpeningHours } from "@/lib/opening-hours";
 import { getRestaurantTimezone } from "@/lib/data/timezone";
 
@@ -71,12 +73,15 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
     notFound();
   }
 
-  const [menu, timeZone, theme] = await Promise.all([
+  const [menu, timeZone, theme, whatsapp] = await Promise.all([
     getPublicMenu(restaurant.id),
     getRestaurantTimezone(restaurant.id),
     // Tema da casa (Etapa 9). Falha aqui não derruba o cardápio: a leitura cai
     // no tema padrão, que é o fallback do item 10 do escopo.
     getPublicRestaurantTheme(restaurant.id),
+    // WhatsApp (Etapa 13). A RPC já devolve `null` quando o canal está
+    // desligado, sem número ou fora do plano — aqui só se renderiza o que veio.
+    getPublicWhatsappConfig(restaurant.slug),
   ]);
 
   const hours = readOpeningHours(restaurant.settings);
@@ -163,6 +168,20 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
               </dl>
             </>
           )}
+
+          {/*
+            WhatsApp (Etapa 13): depois do cardápio e dos horários, antes da
+            assinatura da plataforma. Fica no rodapé no cardápio sem mesa — quem
+            está escolhendo, não quem já sentou — e é o último caminho quando o
+            cardápio não atende (fechado, sem produto, precisa de informação).
+          */}
+          <div className="mt-6 pb-1">
+            <WhatsappButton
+              config={whatsapp}
+              restaurantName={restaurant.name}
+              theme={theme}
+            />
+          </div>
 
           <p className="mt-6 flex flex-wrap items-center justify-center gap-1.5 text-center text-xs text-[var(--mv-text-muted)]">
             <span>{restaurant.name}</span>

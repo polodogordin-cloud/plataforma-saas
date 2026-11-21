@@ -6,6 +6,7 @@ import {
   CreditCard,
   LifeBuoy,
   LogOut,
+  MessageCircle,
   Palette,
   ShieldCheck,
   Store,
@@ -45,6 +46,14 @@ const groups: { title: string; items: Item[] }[] = [
         label: "Personalizar cardápio",
         description: "Logo, capa, cores e estilos",
         icon: Palette,
+      },
+      {
+        // Etapa 13. Fica ao lado da personalização porque é a mesma natureza:
+        // o que o cliente vê no cardápio.
+        href: "/app/configuracoes/whatsapp",
+        label: "WhatsApp",
+        description: "Número, mensagem inicial e botão no cardápio",
+        icon: MessageCircle,
       },
     ],
   },
@@ -198,7 +207,7 @@ export default async function SettingsPage() {
         </form>
 
         <p className="pb-2 text-center text-xs text-ink-400">
-          Menuvo · versão 0.11.0 (Etapa 11)
+          Menuvo · versão 0.13.0 (Etapa 13)
         </p>
       </main>
     </>
