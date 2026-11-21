@@ -676,6 +676,92 @@ assinatura esbarrava no guard do plano.
 
 ---
 
+## PWA (Etapa 12)
+
+O app é instalável no Android e no iPhone. Nada disso é "telefone falso": o
+manifesto é servido por rota com `content-type: application/manifest+json`, os
+ícones são PNG reais em 192 e 512 (mais variante **maskable**, para o Android não
+recortar o logo), e o service worker é versionado pelo **hash do próprio
+conteúdo** — uma correção de cache chega ao aparelho no deploy seguinte.
+
+### O que o app guarda no aparelho
+
+A regra que governa todo o cache é uma só: **guardar o que é igual para todo
+mundo, nunca o que depende de quem está pedindo**. Uma resposta em cache não
+passa por RLS, cookie de sessão nem middleware — no aparelho compartilhado de um
+salão, o próximo a abrir veria o que ficou guardado.
+
+| O quê                                         | Estratégia      | Por quê |
+| --------------------------------------------- | --------------- | ------- |
+| `/_next/static/*`, `/icons/*`, `/fonts/*`     | cache primeiro  | nome tem hash; o conteúdo nunca muda |
+| Fotos públicas de produto (Storage do Supabase) | cache primeiro | maior ganho de carga do cardápio |
+| `/r/[slug]` (cardápio público)                 | rede primeiro   | preço e prato mudam; cache é só a rede de segurança |
+| `/app`, `/admin`, `/onboarding`, `configuracoes` | **rede pura** | resposta depende da sessão |
+| `*.supabase.co` (API e auth)                   | **rede pura**   | resposta depende do usuário ou do token |
+| `/api`, `/auth`, pedido, carrinho              | **rede pura**   | dado de pedido em cache = pedido errado |
+| Qualquer `POST`/`PUT`/`PATCH`/`DELETE`         | rede pura       | escrita em cache é bug de dados |
+
+Os caches têm teto (80 estáticos, 24 páginas, 120 fotos) e poda pelas entradas
+mais antigas: celular tem pouco espaço e o sistema despeja cache grande.
+
+Sem rede, navegar para uma tela do painel mostra o `offline.html` (guardado no
+`install`, sem dado de ninguém) em vez do erro nativo do navegador — que no
+iPhone parece que o app quebrou. O cardápio público já visitado continua
+abrindo, e o que o cliente montou no carrinho vive em estado do React: nada
+disso passa pelo service worker.
+
+### Atualização
+
+O SW novo fica em `waiting` — **não** assume sozinho, porque recarregar no meio
+de um pedido é pior que ficar uma versão atrás. A página mostra "Nova versão
+disponível · Atualizar" com o botão que envia `SKIP_WAITING`; se a pessoa
+ignorar, o app segue funcionando e a atualização entra na próxima abertura. No
+`activate` os caches de versões anteriores são apagados.
+
+### Convite para instalar
+
+Aparece a partir da **segunda visita**, nunca em modo standalone e nunca depois
+de dispensado (30 dias, em `localStorage`). No Android, o botão usa o
+`beforeinstallprompt` quando o navegador permite; no iPhone o texto explica o
+caminho real do Safari (*Compartilhar → Adicionar à Tela de Início*), porque o
+iOS não expõe API de instalação. O texto é um só em `src/lib/pwa.ts` — a tela e
+o teste leem a mesma fonte.
+
+### Arquivos
+
+| Arquivo | Papel |
+| ------- | ----- |
+| `src/lib/pwa.ts` | **Fonte única**: nome, cores, `start_url`, ícones, regras de cache, textos do convite |
+| `src/app/manifest.webmanifest/route.ts` | Manifest gerado a partir dessa fonte |
+| `src/app/sw.js/route.ts` | Serve o SW com versão carimbada e `Cache-Control: must-revalidate` |
+| `src/sw-source.js` | O service worker (JS puro — não é transpilado) |
+| `public/offline.html` | Tela de "sem conexão", autocontida e sem CSS externo |
+| `src/components/pwa/` | Registro do SW, convite de instalação, aviso de atualização |
+| `scripts/generate-icons.mjs` | Gera os 6 PNGs a partir do logo (`node scripts/generate-icons.mjs`) |
+
+### Verificação
+
+```bash
+npm run build && npm start          # em outro terminal
+node scripts/audit-layout.mjs       # rotas, alvos de toque e pacote PWA
+node .arena-test/pwa-lib.cjs        # regras de cache e textos
+node .arena-test/pwa-ui.cjs         # convite e aviso de atualização (jsdom)
+node .arena-test/pwa-nav.cjs        # navegação inferior em 320–430px
+node .arena-test/pwa-sw.cjs         # service worker rodando em ambiente simulado
+node .arena-test/pwa-ssr.cjs        # manifest, ícones e <head> servidos de verdade
+node .arena-test/pwa-security.cjs   # nada de credencial, nada sensível em cache
+```
+
+Os harnesses de UI precisam de `npm install --no-save jsdom esbuild`.
+
+**Checklist que exige aparelho** (o resto é automatizado): instalar pelo Chrome
+Android e pelo Safari iPhone, abrir pelo ícone sem a barra do navegador, fazer
+login dentro do app instalado, abrir o cardápio público e o QR de uma mesa,
+receber um pedido com o app aberto, perder o sinal de propósito e conferir a
+tela de aviso, e atualizar o app depois de um deploy.
+
+---
+
 ## Rotas
 
 | Rota                                  | Descrição                                       |
@@ -713,6 +799,9 @@ assinatura esbarrava no guard do plano.
 | `/app/plano`                          | **Meu plano** — status, uso, limites e troca    |
 | `/admin/planos`                       | Catálogo: criar, editar, ativar, preço, limites |
 | `/admin/assinaturas`                  | Plano, status, período e trial de cada casa     |
+| `/manifest.webmanifest`               | **Manifesto do PWA** (Etapa 12)                 |
+| `/sw.js`                              | **Service worker** — versão carimbada por hash  |
+| `/offline.html`                       | Tela de "sem conexão"                           |
 
 Fluxo principal: **cadastro → login automático → criar restaurante → dashboard**.
 O middleware do Supabase renova a sessão e exige login em `/app`,
@@ -769,6 +858,8 @@ src/
 │   ├── billing/        PlanCard, UsageMeter, PlanSwitcher (Etapa 11)
 │   ├── theme/          Editor de personalização: ThemeEditor, MenuPreview,
 │   │                   ColorField, ImagePicker
+│   ├── pwa/            Registro do service worker, convite de instalação
+│   │                   e aviso de atualização (Etapa 12)
 │   └── ui/             Button, Field, Card, Badge, Sheet, Switch,
 │                       ConfirmSheet, ComingSoon…
 ├── lib/
@@ -790,7 +881,9 @@ src/
 │   ├── realtime.ts     nomes dos canais de tempo real
 │   ├── plan-rules.ts   limites, uso e comparação de planos (neutro)
 │   ├── billing/        contrato de gateway de pagamento (Etapa 11)
+│   ├── pwa.ts          config do PWA: nome, cores, ícones, cache (Etapa 12)
 │   └── validation.ts   schemas Zod
+├── sw-source.js        service worker (JS puro, versionado por hash)
 └── middleware.ts
 supabase/migrations/    schema aplicado via Supabase
                         0001_init.sql (Etapa 1)
@@ -805,7 +898,12 @@ supabase/migrations/    schema aplicado via Supabase
                         0010_restaurant_theme.sql (Etapa 9)
                         0011_platform_admin.sql (Etapa 10)
                         0012_plans_subscriptions.sql (Etapa 11)
+                        0013_plan_catalog_and_trial_fix.sql (Etapa 11)
+public/
+├── icons/              ícones do PWA (192, 512, maskable, apple-touch)
+└── offline.html        tela de "sem conexão"
 scripts/                auditoria de layout + teste de RLS
+                        generate-icons.mjs (logo → PNGs do PWA)
 ```
 
 ---
@@ -874,14 +972,34 @@ scripts/                auditoria de layout + teste de RLS
 | ~~9~~ | ~~Personalização do cardápio~~  | ~~`restaurant_themes` + `/app/configuracoes/personalizacao` — **concluída**~~ |
 | ~~10~~ | ~~Painel master do administrador~~ | ~~`platform_admins` + `/admin` — **concluída**~~ |
 | ~~11~~ | ~~Planos e assinaturas~~        | ~~`plans`, `subscriptions`, limites por trigger — **concluída**~~ |
-| 12    | Cobrança real (gateway)         | `lib/billing` — Stripe/Mercado Pago/Asaas via `PAYMENT_PROVIDER` |
-| 13    | Publicação e produção           | domínios, observabilidade, cache                    |
+| ~~12~~ | ~~PWA instalável e mobile first~~ | ~~manifest, service worker, ícones, offline — **concluída**~~ |
+| 13    | Cobrança real (gateway)         | `lib/billing` — Stripe/Mercado Pago/Asaas via `PAYMENT_PROVIDER` |
+| 14    | Publicação e produção           | domínios, observabilidade, cache                    |
 
 Pontos já preparados: o bucket de storage existe, o tema já é uma tabela por
 tenant, a função `has_restaurant_role` aceita o array de papéis permitidos (novos
 níveis de acesso não exigem reescrever policies) e a cobrança tem contrato
 pronto em `lib/billing` com `billing_events` no banco — ligar um gateway é
 implementar `PaymentProvider` e um endpoint de webhook, não reescrever regra.
+
+---
+
+### PWA e cache
+
+- **O cache só guarda o que é igual para todo mundo.** Regra única que explica
+  todas as escolhas: resposta por usuário (painel, Supabase, pedido) vai direto
+  para a rede. A ordem das regras importa e é testada — uma regra de URL
+  absoluta do Supabase chegou a capturar as fotos públicas de produto e anular o
+  maior ganho de carga do cardápio. O teste `fotos de produto são cache-first`
+  existe para isso não voltar.
+- **Versão do service worker = hash do conteúdo.** Não é data nem tamanho: só
+  muda quando a política de cache muda, e muda sempre que ela muda.
+- **"Configurações", não "Ajustes".** A aba voltou ao nome da rota. Cabe em 320px
+  com tamanho de fonte fluido (`clamp`), em vez de encurtar o nome do usuário.
+- **O SW nunca recarrega sozinho.** Atualização aparece como convite; um reload
+  no meio de um pedido é pior que ficar uma versão atrás.
+- **Sem rede, tela de aviso.** Toda navegação sem conexão cai no `offline.html`,
+  inclusive as do painel — que continua sem cachear nada de conteúdo.
 
 ---
 

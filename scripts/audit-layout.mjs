@@ -1,11 +1,13 @@
 /**
- * Auditoria de layout mobile (Etapa 1).
+ * Auditoria de layout mobile (Etapa 1, ampliada na Etapa 12).
  *
  * 1. Verifica overflow horizontal no CSS gerado (nenhuma utilidade de largura
  *    fixa acima da maior viewport suportada).
  * 2. Confere que as rotas públicas respondem 200 com meta viewport correto.
  * 3. Sinaliza alvos de toque abaixo de 44px no código-fonte, ignorando links
  *    inline no meio de texto (exceção prevista na WCAG 2.5.8).
+ * 4. **Etapa 12:** confere o pacote PWA (manifest, sw, ícones, offline) e revisa
+ *    as seis larguras de aparelho do escopo para conteúdo que não caiba nelas.
  *
  * Uso: node scripts/audit-layout.mjs [baseUrl]
  */
@@ -41,6 +43,17 @@ const ROUTES = [
   "/admin/assinaturas",
 ];
 const MAX_WIDTH = 430;
+
+/**
+ * Larguras que a Etapa 12 manda testar.
+ *
+ * 320 é o iPhone SE de 1ª geração e o menor Android comum — se cabe ali, cabe
+ * em qualquer aparelho atual. 430 é o iPhone Pro Max. O teste real de cada uma
+ * exigiria navegador com viewport; aqui o que se garante é que **nenhuma
+ * largura fixa** no código passa de 320 (abaixo disso a página estoura a tela)
+ * e que a maior viewport não é ultrapassada.
+ */
+const DEVICE_WIDTHS = [320, 360, 375, 390, 414, 430];
 
 let failures = 0;
 let warnings = 0;
@@ -104,7 +117,87 @@ try {
   console.log("⚠️  CSS não encontrado (rode `npm run build` antes)");
 }
 
-/* --------------------------------------------------------- alvos de toque */
+/* -------------------------------------------------------- pacote PWA (E12) */
+{
+  console.log("\nPacote PWA");
+
+  const manifestRes = await fetch(`${BASE}/manifest.webmanifest`);
+  if (manifestRes.status !== 200) {
+    console.log(`❌ /manifest.webmanifest: HTTP ${manifestRes.status}`);
+    failures++;
+  } else {
+    const manifest = await manifestRes.json();
+    const problems = [];
+
+    if (!manifest.name) problems.push("name");
+    if (!manifest.short_name) problems.push("short_name");
+    if (!manifest.start_url) problems.push("start_url");
+    if (manifest.display !== "standalone") problems.push("display");
+    if (!manifest.theme_color) problems.push("theme_color");
+    if (!manifest.background_color) problems.push("background_color");
+    if (!Array.isArray(manifest.icons) || manifest.icons.length === 0) problems.push("icons");
+
+    const sizes = (manifest.icons ?? []).map((icon) => icon.sizes);
+    if (!sizes.includes("192x192") || !sizes.includes("512x512")) problems.push("ícones 192/512");
+
+    if (problems.length) {
+      console.log(`❌ manifest: faltando ${problems.join(", ")}`);
+      failures++;
+    } else {
+      console.log(`✅ manifest: instalável (${manifest.name}, ${sizes.join(" + ")})`);
+    }
+
+    // Todo ícone declarado precisa responder de verdade: manifest apontando
+    // para arquivo inexistente é instalação recusada sem mensagem clara.
+    for (const icon of manifest.icons ?? []) {
+      const res = await fetch(BASE + icon.src, { redirect: "manual" });
+      if (res.status !== 200) {
+        console.log(`❌ ícone ${icon.src}: HTTP ${res.status}`);
+        failures++;
+      }
+    }
+  }
+
+  const swRes = await fetch(`${BASE}/sw.js`);
+  const cacheControl = swRes.headers.get("cache-control") ?? "";
+  if (swRes.status !== 200) {
+    console.log(`❌ /sw.js: HTTP ${swRes.status}`);
+    failures++;
+  } else if (!/max-age=0|no-cache|must-revalidate/.test(cacheControl)) {
+    console.log(`⚠️  /sw.js: Cache-Control "${cacheControl}" pode congelar o SW`);
+    warnings++;
+  } else {
+    console.log("✅ service worker: servido sem cache longo");
+  }
+
+  const offlineRes = await fetch(`${BASE}/offline.html`);
+  if (offlineRes.status !== 200) {
+    console.log(`❌ /offline.html: HTTP ${offlineRes.status}`);
+    failures++;
+  } else {
+    console.log("✅ tela de offline disponível");
+  }
+
+  // HTML de uma página: as metas que o navegador lê para instalar.
+  const home = await (await fetch(`${BASE}/`)).text();
+  const pwaMeta = [
+    ['rel="manifest"', /rel="manifest"/.test(home)],
+    ["theme-color", /name="theme-color"/.test(home)],
+    ["apple-touch-icon", /rel="apple-touch-icon"/.test(home)],
+    ["apple-mobile-web-app-capable", /name="apple-mobile-web-app-capable"/.test(home)],
+    ["viewport-fit=cover", /viewport-fit=cover/.test(home)],
+  ];
+
+  const missing = pwaMeta.filter(([, ok]) => !ok).map(([name]) => name);
+  if (missing.length) {
+    console.log(`❌ metas de instalação ausentes: ${missing.join(", ")}`);
+    failures++;
+  } else {
+    console.log("✅ metas de instalação no <head>");
+  }
+}
+
+/* ------------------------------------------------ larguras de aparelho (E12) */
 const walk = (dir, acc = []) => {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
@@ -142,6 +235,30 @@ for (const file of walk("src")) {
       warnings++;
     }
   });
+}
+
+/* ------------------------------------------- larguras fixas vs. aparelhos */
+{
+  // Classes de largura fixa em px no código. Qualquer valor acima de 320 estoura
+  // a menor tela do escopo; acima de 430, estoura a maior.
+  const sources = walk("src").map((file) => ({ file, text: readFileSync(file, "utf8") }));
+  const offenders = [];
+
+  for (const { file, text } of sources) {
+    for (const match of text.matchAll(/\b(?:min-)?w-\[(\d{2,4})px\]/g)) {
+      const width = Number(match[1]);
+      if (width > 320) offenders.push({ file, width });
+    }
+  }
+
+  if (offenders.length) {
+    for (const { file, width } of offenders.slice(0, 5)) {
+      console.log(`⚠️  w-[${width}px] em ${file} estoura telas de 320px`);
+    }
+    warnings += offenders.length;
+  } else {
+    console.log(`✅ nenhuma largura fixa estoura as larguras ${DEVICE_WIDTHS.join("/")}px`);
+  }
 }
 
 console.log(`\nFalhas: ${failures} · Avisos: ${warnings}`);

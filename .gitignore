@@ -10,5 +10,7 @@ dist
 next-env.d.ts
 .DS_Store
 
-# Artefatos locais dos harnesses da Etapa 9 (bundles temporários)
+# Artefatos locais dos harnesses (bundles e stubs gerados em runtime)
 .arena-test/build-*/
+.arena-test/build-pwa-icons.js
+.arena-test/build-pwa-nav-icons.js
