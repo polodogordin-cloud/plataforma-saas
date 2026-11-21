@@ -94,6 +94,13 @@ export async function createTable(
   });
 
   if (error) {
+    if (error.message?.includes("plan_limit_reached")) {
+      return {
+        ok: false,
+        message: "Seu plano atingiu o limite de mesas. Veja os planos para liberar mais.",
+        fieldErrors: { plan: ["Limite de mesas atingido."] },
+      };
+    }
     const friendly = friendlyError(error);
     if (friendly) return { ok: false, fieldErrors: { name: [friendly] } };
     return { ok: false, message: "Não foi possível criar a mesa." };

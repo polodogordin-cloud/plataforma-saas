@@ -34,6 +34,11 @@ const ROUTES = [
   "/admin/pedidos",
   "/admin/auditoria",
   "/admin/configuracoes",
+  // Etapa 11: vitrine pública, "Meu plano" e as duas telas comerciais do master
+  "/planos",
+  "/app/plano",
+  "/admin/planos",
+  "/admin/assinaturas",
 ];
 const MAX_WIDTH = 430;
 

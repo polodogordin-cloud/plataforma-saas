@@ -28,6 +28,14 @@ type NavItem = {
   exact?: boolean;
 };
 
+/**
+ * Seis abas, não cinco (Etapa 11).
+ *
+ * Com "Planos" a barra passaria de 6 alvos de 56px numa tela de 320px: cada
+ * aba ficaria com ~48px e o rótulo quebraria. A solução foi manter as cinco
+ * abas originais e expor Planos/Assinaturas pelo cartão do dashboard e pelo
+ * menu de Ajustes — que é onde o admin vai procurar ao mexer em dinheiro.
+ */
 export const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Início", icon: LayoutDashboard, exact: true },
   { href: "/admin/restaurantes", label: "Casas", icon: Store },

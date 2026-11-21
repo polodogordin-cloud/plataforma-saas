@@ -10,10 +10,13 @@ import {
   Store,
   UtensilsCrossed,
   Users,
+  CreditCard,
+  Receipt,
 } from "lucide-react";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { MetricCard } from "@/components/admin/metric-card";
 import { getAdminDashboard, listAdminAudit, listAdminRestaurants } from "@/lib/data/admin";
+import { getBillingSummary } from "@/lib/data/billing";
 import { formatDate } from "@/lib/utils";
 import { AUDIT_ACTION_LABEL } from "@/lib/admin-audit";
 
@@ -29,10 +32,11 @@ export const dynamic = "force-dynamic";
  * — número sem ação não resolve nada.
  */
 export default async function AdminDashboardPage() {
-  const [metrics, recent, audit] = await Promise.all([
+  const [metrics, recent, audit, billing] = await Promise.all([
     getAdminDashboard(),
     listAdminRestaurants(),
     listAdminAudit(6),
+    getBillingSummary(),
   ]);
 
   if (!metrics) {
@@ -128,6 +132,52 @@ export default async function AdminDashboardPage() {
             </Link>
           </p>
         </section>
+
+        {/* Comercial (Etapa 11) */}
+        {billing && (
+          <section aria-labelledby="metricas-comercial">
+            <h2 id="metricas-comercial" className="mb-2.5 text-sm font-semibold text-ink-700">
+              Planos e assinaturas
+            </h2>
+            <div className="grid grid-cols-2 gap-2.5">
+              <MetricCard
+                label="Em teste"
+                value={billing.trials}
+                icon={CreditCard}
+                href="/admin/assinaturas"
+                hint="Trials em andamento"
+              />
+              <MetricCard
+                label="Assinaturas ativas"
+                value={billing.active}
+                icon={Receipt}
+                href="/admin/assinaturas"
+                tone="sky"
+              />
+              <MetricCard
+                label="Receita mensal"
+                value={billing.mrr}
+                icon={CreditCard}
+                href="/admin/planos"
+                format="currency"
+                hint="Soma dos planos ativos"
+              />
+              <MetricCard
+                label="Em atraso"
+                value={billing.past_due}
+                icon={AlertTriangle}
+                href="/admin/assinaturas"
+                tone={billing.past_due > 0 ? "danger" : "neutral"}
+              />
+            </div>
+            <p className="mt-2 text-xs text-ink-500">
+              {billing.plans_active} de {billing.plans_total} planos na vitrine ·{" "}
+              <Link href="/admin/planos" className="font-medium text-brand-700 underline-offset-2 hover:underline">
+                gerenciar planos
+              </Link>
+            </p>
+          </section>
+        )}
 
         {/* Precisa de atenção */}
         {metrics.restaurants_suspended > 0 && (

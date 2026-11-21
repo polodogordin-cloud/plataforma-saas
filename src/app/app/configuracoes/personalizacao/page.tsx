@@ -6,6 +6,8 @@ import { getActiveRestaurant } from "@/lib/data/restaurants";
 import { getRestaurantTheme } from "@/lib/data/theme";
 import { getPublicMenu } from "@/lib/data/public-menu";
 import { formatPrice } from "@/lib/validation";
+import { LimitReachedNotice } from "@/components/billing/usage-meter";
+import { hasPlanFeature } from "@/lib/data/billing";
 
 export const metadata: Metadata = { title: "Personalizar cardápio" };
 
@@ -24,9 +26,10 @@ export default async function PersonalizationPage() {
   const restaurant = await getActiveRestaurant();
   if (!restaurant) redirect("/onboarding");
 
-  const [theme, menu] = await Promise.all([
+  const [theme, menu, canCustomize] = await Promise.all([
     getRestaurantTheme(restaurant.id),
     getPublicMenu(restaurant.id),
+    hasPlanFeature(restaurant.id, "custom_theme"),
   ]);
 
   const featured = menu.featured.length > 0 ? menu.featured : menu.sections.flatMap((s) => s.products);
@@ -47,7 +50,20 @@ export default async function PersonalizationPage() {
     <>
       <AppHeader title="Personalizar cardápio" subtitle={restaurant.name} />
 
-      <main className="app-shell px-4 pb-6 pt-4">
+      <main className="app-shell space-y-4 px-4 pb-6 pt-4">
+        {/*
+          Recurso bloqueado (Etapa 11): em vez de esconder a tela — o dono
+          continuaria procurando — mostramos o editor com o motivo e o caminho
+          para liberar. O botão de salvar também recusa no servidor.
+        */}
+        {!canCustomize && (
+          <LimitReachedNotice
+            message="Personalização visual faz parte dos planos pagos. Seu plano atual usa o tema padrão."
+            href="/planos"
+          />
+        )}
+
+        <div className={canCustomize ? undefined : "pointer-events-none select-none opacity-60"}>
         <ThemeEditor
           restaurantId={restaurant.id}
           restaurantName={restaurant.name}
@@ -57,6 +73,7 @@ export default async function PersonalizationPage() {
           isPublished={restaurant.status === "published"}
           slug={restaurant.slug}
         />
+        </div>
       </main>
     </>
   );

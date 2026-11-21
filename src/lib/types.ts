@@ -860,3 +860,275 @@ export type AdminAuditRow = {
   metadata: Record<string, unknown>;
   created_at: string;
 };
+
+/* ==========================================================================
+   Etapa 11 · Planos e assinaturas
+   ========================================================================== */
+
+/**
+ * Ciclo de vida comercial da casa (enum `subscription_state`).
+ *
+ * Diferente de `SubscriptionStatus` (Etapa 10): ali os valores espelhavam um
+ * texto livre; aqui são os seis estados do escopo, com `trial` distinto de
+ * `active` — o trial tem prazo e o acesso cai sozinho.
+ */
+export type SubscriptionState =
+  | "trial"
+  | "active"
+  | "past_due"
+  | "cancelled"
+  | "expired"
+  | "suspended";
+
+export const SUBSCRIPTION_STATE_LABEL: Record<SubscriptionState, string> = {
+  trial: "Em teste",
+  active: "Ativa",
+  past_due: "Pagamento atrasado",
+  cancelled: "Cancelada",
+  expired: "Expirada",
+  suspended: "Suspensa",
+};
+
+export const SUBSCRIPTION_STATE_TONE: Record<
+  SubscriptionState,
+  "success" | "warning" | "info" | "danger" | "neutral"
+> = {
+  trial: "info",
+  active: "success",
+  past_due: "warning",
+  cancelled: "neutral",
+  expired: "danger",
+  suspended: "danger",
+};
+
+/** Estados em que o painel do restaurante continua liberado. */
+export const SUBSCRIPTION_STATE_ALLOWS_ACCESS: Record<SubscriptionState, boolean> = {
+  trial: true,
+  active: true,
+  past_due: true,
+  cancelled: false,
+  expired: false,
+  suspended: false,
+};
+
+export type BillingInterval = "monthly" | "yearly";
+
+export const BILLING_INTERVAL_LABEL: Record<BillingInterval, string> = {
+  monthly: "por mês",
+  yearly: "por ano",
+};
+
+/**
+ * Chaves de limite — a lista canônica compartilhada por banco, UI e testes.
+ *
+ * A ordem aqui é a ordem em que os limites aparecem na tela "Meu plano".
+ * Nenhum número mora neste arquivo: só os nomes das chaves.
+ */
+export const PLAN_LIMIT_KEYS = [
+  "max_products",
+  "max_tables",
+  "max_users",
+  "max_categories",
+  "max_orders_month",
+] as const;
+
+export type PlanLimitKey = (typeof PLAN_LIMIT_KEYS)[number];
+
+export const PLAN_LIMIT_LABEL: Record<PlanLimitKey, string> = {
+  max_products: "Produtos",
+  max_tables: "Mesas",
+  max_users: "Usuários",
+  max_categories: "Categorias",
+  max_orders_month: "Pedidos por mês",
+};
+
+/** Frase usada no erro quando o limite estoura (item 8 do escopo). */
+export const PLAN_LIMIT_MESSAGE: Record<PlanLimitKey, string> = {
+  max_products: "Seu plano atingiu o limite de produtos.",
+  max_tables: "Seu plano atingiu o limite de mesas.",
+  max_users: "Seu plano atingiu o limite de usuários.",
+  max_categories: "Seu plano atingiu o limite de categorias.",
+  max_orders_month: "Seu plano atingiu o limite de pedidos no mês.",
+};
+
+/**
+ * Chaves de recurso (`plans.features`).
+ *
+ * `null` de propósito para recurso que ainda não tem tela: a chave existe no
+ * banco e no plano, mas o app não a consome — é o caso de `custom_domain`. A
+ * vitrine mostra o rótulo; o bloqueio acontece quando a feature for usada.
+ */
+export const PLAN_FEATURE_KEYS = [
+  "custom_theme",
+  "nfc",
+  "qr_code",
+  "waiter_call",
+  "bill_request",
+  "analytics",
+  "custom_domain",
+  "whatsapp",
+  "pix",
+] as const;
+
+export type PlanFeatureKey = (typeof PLAN_FEATURE_KEYS)[number];
+
+export const PLAN_FEATURE_LABEL: Record<PlanFeatureKey, string> = {
+  custom_theme: "Personalização visual",
+  nfc: "Etiquetas NFC",
+  qr_code: "QR Code das mesas",
+  waiter_call: "Chamar garçom",
+  bill_request: "Pedir a conta",
+  analytics: "Relatórios",
+  custom_domain: "Domínio próprio",
+  whatsapp: "WhatsApp",
+  pix: "Pix",
+};
+
+export const isPlanFeatureKey = (value: string): value is PlanFeatureKey =>
+  (PLAN_FEATURE_KEYS as readonly string[]).includes(value);
+
+export const isPlanLimitKey = (value: string): value is PlanLimitKey =>
+  (PLAN_LIMIT_KEYS as readonly string[]).includes(value);
+
+/** Plano do catálogo, como a vitrine e o editor do admin consomem. */
+export type PlanLimits = Partial<Record<PlanLimitKey, number | null>>;
+
+export type PlanCatalogEntry = {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  interval: BillingInterval;
+  features: string[];
+  limits: PlanLimits;
+};
+
+/** Filtra o que o banco mandou para as chaves conhecidas (nada de `any`). */
+export function normalizePlanFeatures(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+export function normalizePlanLimits(value: unknown): PlanLimits {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  const result: PlanLimits = {};
+  for (const key of PLAN_LIMIT_KEYS) {
+    if (!(key in source)) continue;
+    const raw = source[key];
+    result[key] = raw === null || raw === undefined ? null : Number(raw);
+  }
+  return result;
+}
+
+/** Uso vs. limite de um recurso contável. */
+export type UsageCounter = { used: number; limit: number | null };
+
+export type RestaurantUsage = {
+  plan_id: string;
+  plan_name: string;
+  limits: PlanLimits;
+  features: string[];
+  products: UsageCounter;
+  tables: UsageCounter;
+  users: UsageCounter;
+  categories: UsageCounter;
+  orders_month: UsageCounter;
+};
+
+/** Resultado de `check_plan_limit`. */
+export type PlanLimitCheck = {
+  key: PlanLimitKey;
+  plan_id: string;
+  used: number;
+  limit: number | null;
+  allowed: boolean;
+};
+
+/** Assinatura corrente vista pelo dono (`my_subscription`). */
+export type MySubscription = {
+  restaurant_id: string;
+  status: SubscriptionState;
+  has_subscription: boolean;
+  plan: PlanCatalogEntry;
+  period_start: string | null;
+  period_end: string | null;
+  trial_start: string | null;
+  trial_end: string | null;
+  cancelled_at: string | null;
+  price_snapshot: number;
+  trial_days: number;
+  usage: RestaurantUsage;
+};
+
+/** Linha de `subscriptions` quando o admin precisa do registro cru. */
+export type SubscriptionRecord = {
+  id: string;
+  restaurant_id: string;
+  plan_id: string;
+  status: SubscriptionState;
+  billing_interval: BillingInterval;
+  current_period_start: string;
+  current_period_end: string | null;
+  trial_start: string | null;
+  trial_end: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  provider: string | null;
+  external_customer_id: string | null;
+  external_subscription_id: string | null;
+  price_snapshot: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Plano na visão do painel master (inclui inativos). */
+export type AdminPlanRow = PlanCatalogEntry & {
+  is_active: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string | null;
+};
+
+/** Linha de `/admin/assinaturas`. */
+export type AdminSubscriptionRow = {
+  restaurant_id: string;
+  restaurant_name: string;
+  restaurant_slug: string;
+  plan_id: string;
+  plan_name: string;
+  price: number;
+  status: SubscriptionState;
+  billing_interval: BillingInterval;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  trial_start: string | null;
+  trial_end: string | null;
+  days_left: number | null;
+  cancelled_at: string | null;
+  provider: string | null;
+  external_subscription_id: string | null;
+  subscription_id: string | null;
+};
+
+/** Contadores comerciais de `/admin/planos`. */
+export type BillingSummary = {
+  plans_total: number;
+  plans_active: number;
+  subscriptions_total: number;
+  trials: number;
+  active: number;
+  past_due: number;
+  cancelled: number;
+  expired: number;
+  mrr: number;
+  trial_days: number;
+  grace_days: number;
+};
+
+/** Vitrine pública de `/planos`. */
+export type PublicPlansPayload = {
+  trial_days: number;
+  plans: PlanCatalogEntry[];
+};
