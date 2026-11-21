@@ -36,10 +36,16 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
+  // `/admin` entra aqui só para exigir **sessão**. O papel de plataforma é
+  // checado no layout e, de novo, em cada RPC — o middleware não consulta o
+  // banco de propósito: ele roda em toda rota, e uma consulta por requisição
+  // para decidir autorização seria lenta e frágil (o papel mudaria com cache).
   const isPrivate =
     pathname.startsWith("/app") ||
     pathname.startsWith("/onboarding") ||
-    pathname.startsWith("/configuracoes");
+    pathname.startsWith("/configuracoes") ||
+    pathname === "/admin" ||
+    pathname.startsWith("/admin/");
 
   const isAuthPage =
     pathname === "/entrar" || pathname === "/criar-conta" || pathname === "/recuperar-senha";
@@ -54,7 +60,10 @@ export async function updateSession(request: NextRequest) {
   // Já logado não precisa ver login/cadastro
   if (user && isAuthPage) {
     const url = request.nextUrl.clone();
-    url.pathname = "/app";
+    // Quem veio de /admin volta para /admin depois do login.
+    url.pathname = request.nextUrl.searchParams.get("next")?.startsWith("/admin")
+      ? "/admin"
+      : "/app";
     url.search = "";
     return NextResponse.redirect(url);
   }

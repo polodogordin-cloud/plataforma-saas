@@ -1,0 +1,244 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardList,
+  Package,
+  PauseCircle,
+  ScrollText,
+  Store,
+  UtensilsCrossed,
+  Users,
+} from "lucide-react";
+import { AdminHeader } from "@/components/admin/admin-header";
+import { MetricCard } from "@/components/admin/metric-card";
+import { getAdminDashboard, listAdminAudit, listAdminRestaurants } from "@/lib/data/admin";
+import { formatDate } from "@/lib/utils";
+import { AUDIT_ACTION_LABEL } from "@/lib/admin-audit";
+
+export const metadata: Metadata = { title: "Início" };
+export const dynamic = "force-dynamic";
+
+/**
+ * Dashboard da plataforma.
+ *
+ * Responde às perguntas que o suporte faz ao abrir o painel: quantas casas
+ * existem, quantas estão no ar, quantas estão bloqueadas e quanto movimento há
+ * hoje. Os cards de "suspensos" e "inativos" são atalhos para a lista filtrada
+ * — número sem ação não resolve nada.
+ */
+export default async function AdminDashboardPage() {
+  const [metrics, recent, audit] = await Promise.all([
+    getAdminDashboard(),
+    listAdminRestaurants(),
+    listAdminAudit(6),
+  ]);
+
+  if (!metrics) {
+    return (
+      <>
+        <AdminHeader title="Não foi possível carregar" />
+        <main className="app-shell px-4 py-6">
+          <div className="card p-5 text-sm text-ink-600">
+            Os contadores não puderam ser lidos agora. Recarregue a página; se
+            persistir, verifique a conexão com o banco.
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  const latest = recent.slice(0, 4);
+
+  return (
+    <>
+      <AdminHeader title="Visão geral" subtitle="Toda a plataforma em uma tela" />
+
+      <main className="app-shell space-y-6 px-4 py-5">
+        {/* Restaurantes */}
+        <section aria-labelledby="metricas-restaurantes">
+          <h2 id="metricas-restaurantes" className="mb-2.5 text-sm font-semibold text-ink-700">
+            Restaurantes
+          </h2>
+          <div className="grid grid-cols-2 gap-2.5">
+            <MetricCard
+              label="Restaurantes"
+              value={metrics.restaurants_total}
+              icon={Store}
+              href="/admin/restaurantes"
+              tone="neutral"
+            />
+            <MetricCard
+              label="Ativos"
+              value={metrics.restaurants_active}
+              icon={CheckCircle2}
+              href="/admin/restaurantes?status=published"
+              tone="brand"
+              hint="No ar para o cliente"
+            />
+            <MetricCard
+              label="Inativos"
+              value={metrics.restaurants_inactive}
+              icon={PauseCircle}
+              href="/admin/restaurantes?status=paused"
+              tone="amber"
+              hint="Pausados ou em rascunho"
+            />
+            <MetricCard
+              label="Suspensos"
+              value={metrics.restaurants_suspended}
+              icon={AlertTriangle}
+              href="/admin/restaurantes?status=suspended"
+              tone="danger"
+              hint="Bloqueados pela plataforma"
+            />
+          </div>
+        </section>
+
+        {/* Volume */}
+        <section aria-labelledby="metricas-volume">
+          <h2 id="metricas-volume" className="mb-2.5 text-sm font-semibold text-ink-700">
+            Operação
+          </h2>
+          <div className="grid grid-cols-2 gap-2.5">
+            <MetricCard label="Produtos" value={metrics.products_total} icon={Package} />
+            <MetricCard label="Mesas" value={metrics.tables_total} icon={UtensilsCrossed} />
+            <MetricCard
+              label="Pedidos"
+              value={metrics.orders_total}
+              icon={ClipboardList}
+              href="/admin/pedidos"
+            />
+            <MetricCard
+              label="Pedidos hoje"
+              value={metrics.orders_today}
+              icon={ClipboardList}
+              href="/admin/pedidos"
+              tone="sky"
+              hint="Fuso de Brasília"
+            />
+          </div>
+          <p className="mt-2 text-xs text-ink-500">
+            {metrics.users_total}{" "}
+            {metrics.users_total === 1 ? "usuário cadastrado" : "usuários cadastrados"} na
+            plataforma ·{" "}
+            <Link href="/admin/usuarios" className="font-medium text-brand-700 underline-offset-2 hover:underline">
+              ver todos
+            </Link>
+          </p>
+        </section>
+
+        {/* Precisa de atenção */}
+        {metrics.restaurants_suspended > 0 && (
+          <section aria-labelledby="atencao">
+            <h2 id="atencao" className="mb-2.5 text-sm font-semibold text-ink-700">
+              Precisa de atenção
+            </h2>
+            <Link
+              href="/admin/restaurantes?status=suspended"
+              className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-800"
+            >
+              <AlertTriangle className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+              <span>
+                <strong className="font-semibold">
+                  {metrics.restaurants_suspended}{" "}
+                  {metrics.restaurants_suspended === 1
+                    ? "restaurante suspenso"
+                    : "restaurantes suspensos"}
+                </strong>
+                <span className="mt-0.5 block text-red-700">
+                  O cardápio público está fora do ar. Toque para revisar.
+                </span>
+              </span>
+            </Link>
+          </section>
+        )}
+
+        {/* Últimos cadastros */}
+        {latest.length > 0 && (
+          <section aria-labelledby="recentes">
+            <div className="mb-2.5 flex items-end justify-between gap-3">
+              <h2 id="recentes" className="text-sm font-semibold text-ink-700">
+                Últimos restaurantes
+              </h2>
+              <Link
+                href="/admin/restaurantes"
+                className="text-xs font-semibold text-brand-700 hover:underline"
+              >
+                Ver todos
+              </Link>
+            </div>
+            <ul className="card divide-y divide-ink-100 p-0">
+              {latest.map((restaurant) => (
+                <li key={restaurant.id}>
+                  <Link
+                    href={`/admin/restaurantes/${restaurant.id}`}
+                    className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-ink-50"
+                  >
+                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-ink-100 text-xs font-bold text-ink-600">
+                      {restaurant.name.slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-ink-900">
+                        {restaurant.name}
+                      </span>
+                      <span className="block truncate text-xs text-ink-500">
+                        /r/{restaurant.slug} · {formatDate(restaurant.created_at)}
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/* Auditoria */}
+        <section aria-labelledby="atividade">
+          <div className="mb-2.5 flex items-end justify-between gap-3">
+            <h2 id="atividade" className="text-sm font-semibold text-ink-700">
+              Atividade administrativa
+            </h2>
+            <Link
+              href="/admin/auditoria"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:underline"
+            >
+              <ScrollText className="size-3.5" aria-hidden="true" />
+              Auditoria
+            </Link>
+          </div>
+
+          {audit.length === 0 ? (
+            <p className="card p-4 text-sm text-ink-500">
+              Nada registrado ainda. Suspensões, edições e acessos de suporte
+              aparecem aqui automaticamente.
+            </p>
+          ) : (
+            <ul className="card divide-y divide-ink-100 p-0">
+              {audit.map((event) => (
+                <li key={event.id} className="flex items-start gap-3 px-4 py-2.5">
+                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-ink-300" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-ink-800">
+                      {AUDIT_ACTION_LABEL[event.action] ?? event.action}
+                    </span>
+                    <span className="block truncate text-xs text-ink-500">
+                      {event.restaurant_name ?? "—"} ·{" "}
+                      {event.actor_email ?? "sistema"} · {formatDate(event.created_at)}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <p className="flex items-center justify-center gap-1.5 pb-2 text-center text-[0.7rem] text-ink-400">
+          <Users className="size-3.5" aria-hidden="true" />
+          Acesso restrito a administradores da plataforma
+        </p>
+      </main>
+    </>
+  );
+}

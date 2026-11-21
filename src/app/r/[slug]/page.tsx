@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { MenuUnavailable } from "@/components/public/menu-unavailable";
 import { PublicHeader } from "@/components/public/public-header";
 import { PublicMenuView } from "@/components/public/public-menu";
 import { ThemeScope } from "@/components/public/themed";
-import { getPublicMenu, getPublicRestaurant } from "@/lib/data/public-menu";
+import { getPublicMenu, getPublicRestaurant, getPublicRestaurantState } from "@/lib/data/public-menu";
 import { getPublicRestaurantTheme } from "@/lib/data/theme";
 import { describeWeek, readOpeningHours } from "@/lib/opening-hours";
 import { getRestaurantTimezone } from "@/lib/data/timezone";
@@ -61,7 +62,14 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
   const { slug } = await params;
   const restaurant = await getPublicRestaurant(slug);
 
-  if (!restaurant) notFound();
+  if (!restaurant) {
+    // Etapa 10: distinguir "nunca existiu" de "existe, mas suspenso/pausado".
+    // Só o status sai daqui — nenhum outro dado do restaurante é exposto.
+    const state = await getPublicRestaurantState(slug);
+    if (state === "suspended") return <MenuUnavailable reason="suspended" />;
+    if (state) return <MenuUnavailable reason="unpublished" />;
+    notFound();
+  }
 
   const [menu, timeZone, theme] = await Promise.all([
     getPublicMenu(restaurant.id),

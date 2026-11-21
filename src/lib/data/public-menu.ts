@@ -45,6 +45,26 @@ export const getPublicRestaurant = cache(
 );
 
 /**
+ * Estado de um slug para a mensagem pública — Etapa 10.
+ *
+ * `getPublicRestaurant` devolve `null` tanto para "não existe" quanto para
+ * "existe, mas suspenso/pausado", e a página precisa distinguir os dois para
+ * não mostrar um 404 seco a quem escaneou o QR de uma casa suspensa.
+ *
+ * A RPC devolve **apenas o status**: nada de telefone, equipe ou configurações.
+ * `null` significa "não existe" e continua virando 404.
+ */
+export const getPublicRestaurantState = cache(async (slug: string): Promise<string | null> => {
+  if (!slug) return null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("public_restaurant_state", {
+    p_slug: normalizeSlug(slug),
+  });
+  if (error) return null;
+  return (data as string | null) ?? null;
+});
+
+/**
  * Cardápio agrupado por categoria, na ordem definida pelo restaurante.
  *
  * Produtos sem categoria não aparecem: a view pública exige `category_id`.
