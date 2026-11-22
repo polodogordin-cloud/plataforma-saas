@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarClock, ChefHat, Loader2, MessageSquareText, UtensilsCrossed } from "lucide-react";
+import {
+  CalendarClock,
+  ChefHat,
+  Loader2,
+  MessageSquareText,
+  Printer,
+  UtensilsCrossed,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { PaymentSection } from "@/components/orders/payment-section";
@@ -104,7 +111,10 @@ export function OrderDetailSheet({
       description={`${order.table_name} · ${orderClock(order.created_at, timeZone)}`}
       size="tall"
       footer={
-        action || canCancel ? (
+        // Etapa 18: imprimir é sempre possível enquanto o pedido existe — inclusive
+        // entregue (a via para o caixa). Por isso o botão não depende de haver
+        // próxima ação, e por isso o rodapé sempre renderiza.
+        <div className="space-y-2">
           <div className="flex gap-2">
             {action && (
               <Button size="lg" className="min-w-0 flex-1 px-3 text-[0.9rem]" onClick={onAdvance}>
@@ -122,7 +132,23 @@ export function OrderDetailSheet({
               </Button>
             )}
           </div>
-        ) : undefined
+
+          {/*
+            "🖨 Imprimir pedido" abre a rota de impressão numa guia nova: o sheet
+            fica aberto no painel, e o cupom sai numa tela sem navegação para
+            poder ser impresso limpo. Em tablet de cozinha, voltar é fechar a
+            guia — o painel continua onde estava.
+          */}
+          <a
+            href={`/app/pedidos/${order.id}/imprimir`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="tap-target inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-ink-200 bg-white text-[0.88rem] font-semibold text-ink-800 hover:bg-ink-50"
+          >
+            <Printer className="size-4.5" aria-hidden="true" />
+            🖨 Imprimir pedido
+          </a>
+        </div>
       }
     >
       <div className="space-y-4">

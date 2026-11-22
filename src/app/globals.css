@@ -303,3 +303,111 @@ nav,
     color: #6b7280;
   }
 }
+
+/* ------------------------------------------------------------------ cupom
+ *
+ * Etapa 18: cupom de impressora térmica (58mm / 80mm).
+ *
+ * O `.print-sheet` da Etapa 4 centra o conteúdo na folha A4 — certo para o QR
+ * de mesa, errado para cupom: papel térmico é contínuo, sai de cima para baixo
+ * e centrar horizontalmente o texto de 32 colunas desalinharia a bobina. Por
+ * isso a raiz de impressão térmica é outra (`.thermal-sheet`) e o `@page` é
+ * trocado em tempo de execução pela página de impressão, que sabe a largura
+ * escolhida.
+ *
+ * Larguras: a área imprimível real não é o nominal do rolo — a cabeça de
+ * impressão não alcança as bordas. 58mm imprime ~48mm; 80mm, ~72mm. Desenhar
+ * em 58mm "cheios" faz a última coluna cair fora do papel.
+ */
+
+.thermal-ticket {
+  /* Fonte monoespaçada: cada caractere ocupa a mesma coluna, que é como a
+     quebra de linha calculada em `printing.ts` conta o espaço. Fonte
+     proporcional desalinharia a coluna de preços. */
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-ligatures: none;
+  color: #000;
+  background: #fff;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  tab-size: 1;
+}
+
+.thermal-ticket[data-paper="58"] {
+  width: 48mm;
+  padding: 3mm 2mm;
+  font-size: 9.5px;
+  line-height: 1.28;
+}
+
+.thermal-ticket[data-paper="80"] {
+  width: 72mm;
+  padding: 4mm 3mm;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+/* Prévia na tela: sombra leve e fundo branco para parecer papel. No papel,
+   some — quem manda é o @page da página de impressão. */
+@media screen {
+  .thermal-frame {
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 12px 32px -18px rgba(16, 24, 40, 0.35);
+    border-radius: 2px;
+  }
+}
+
+@media print {
+  /*
+   * A página de impressão é uma rota própria (`/imprimir/[id]`), sem a
+   * navegação do painel — mas o CSS global é compartilhado com o `.print-sheet`
+   * da Etapa 4. Por isso: quando existe `.thermal-sheet` no documento, ele é
+   * quem sai, e a regra do QR (que usa `visibility`) não se aplica.
+   */
+  body:has(.thermal-sheet) * {
+    visibility: hidden !important;
+  }
+
+  body:has(.thermal-sheet) .thermal-sheet,
+  body:has(.thermal-sheet) .thermal-sheet * {
+    visibility: visible !important;
+  }
+
+  .thermal-sheet {
+    position: static !important;
+    display: block !important;
+    background: #fff;
+    margin: 0;
+    padding: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .thermal-sheet .thermal-ticket {
+    /* No papel não há arredondamento nem sombra: é bobina, não cartão. */
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    margin: 0;
+  }
+
+  .thermal-sheet .thermal-ticket[data-paper="58"] {
+    width: 48mm;
+    padding: 2mm 1mm 6mm;
+  }
+
+  .thermal-sheet .thermal-ticket[data-paper="80"] {
+    width: 72mm;
+    padding: 3mm 2mm 8mm;
+  }
+}
+
+/* Controles que não devem sair no papel: cabeçalho, avisos, botões e a
+ * prévia (que é substituída pelo cupom em `.thermal-sheet`). Sem esta classe,
+ * um novo botão adicionado na tela vaza para o cupom e ninguém nota até a
+ * bobina sair com "Ajuda" impresso. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

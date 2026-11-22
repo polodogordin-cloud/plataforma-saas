@@ -189,6 +189,59 @@ where pubname = 'supabase_realtime' and schemaname = 'public';
 Alterar papel, ou via `admin_set_member_role`. O usuário precisa sair e entrar
 de novo (ou recarregar) porque o papel é lido do vínculo a cada requisição.
 
+### Impressão (Etapa 18)
+
+`0018_printing.sql` é **um arquivo só, sem passo separado**: os tipos novos
+(`print_paper_width`, `print_profile_kind`, `print_mode`, `print_provider_kind`,
+`print_job_status`) são criados em blocos `do $$ ... if not exists` e nenhum é
+*lido* pela mesma transação que o cria — diferente do enum de papel da Etapa 17,
+que exigiu dois passos.
+
+```sql
+-- conferir que a etapa 18 está aplicada
+select count(*) as tabelas
+from information_schema.tables
+where table_schema = 'public'
+  and table_name in ('print_settings', 'print_profiles', 'printers', 'print_jobs');
+-- esperado: 4
+
+select count(*) as funcoes
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname in ('print_can_view', 'print_can_configure', 'get_print_config',
+                    'save_print_settings', 'save_print_profile', 'delete_print_profile',
+                    'seed_default_print_profiles', 'save_printer', 'delete_printer',
+                    'get_print_order', 'log_print_job');
+-- esperado: 11
+```
+
+**Nenhuma variável de ambiente nova.** A impressão usa o mesmo cliente Supabase,
+e o único caminho de saída hoje é `window.print()` no navegador — não há serviço
+externo, chave de API nem endpoint para configurar.
+
+**Ensaio rápido no banco** (transação descartável, trocando o `sub` pelo usuário
+que se quer testar):
+
+```sql
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"<uuid-do-usuario>","role":"authenticated"}', true);
+
+select public.seed_default_print_profiles('<restaurant_id>'::uuid);  -- 4 na 1ª vez, 0 depois
+select public.get_print_config('<restaurant_id>'::uuid) -> 'settings';
+
+rollback;
+```
+
+`kitchen` deve receber `print_forbidden` em qualquer uma das funções de escrita
+(`save_print_settings`, `save_print_profile`, `save_printer`,
+`seed_default_print_profiles`) e `true` em `print_can_view`. Se `kitchen`
+conseguir salvar, a Etapa 18 está aplicada pela metade.
+
+**Nada de Realtime aqui.** Impressão não assina canal: o cupom é montado no
+servidor a cada abertura da rota, e a configuração é lida com `force-dynamic`.
+
 ### Ao criar migration nova
 
 1. arquivo `NNNN_nome.sql` em `supabase/migrations/`;
@@ -343,3 +396,24 @@ Se `database` for `"down"`, o campo `databaseError` classifica:
 
 O endpoint **nunca** devolve valor de variável, URL do banco ou mensagem crua do
 Postgres: só estado.
+
+---
+
+## Verificação por harness (contagem de referência)
+
+Cada `.arena-test/*.cjs` é independente e sai com código ≠ 0 na primeira falha.
+Requer `npm ci` e, para os harnesses de UI/SSR, `npm install esbuild jsdom --no-save`.
+
+| Harness | Asserts |
+| --- | --- |
+| `prod-lib` / `prod-ssr` | 120 / 10 |
+| `pwa-security` / `pwa-sw` / `pwa-ssr` | 15 / 23 / 43 |
+| `whatsapp-lib` / `whatsapp-ui` / `whatsapp-ssr` | 103 / 56 / 51 |
+| `billing-lib` / `billing-ui` | 72 / 56 |
+| `analytics-lib` / `analytics-security` / `analytics-ui` | 64 / 95 / 48 |
+| `admin-lib` / `nav-fit` | 58 / 19 |
+| `theme-lib` / `theme-ssr` | 59 / 18 |
+| `kitchen-lib` / `kitchen-security` / `kitchen-ui` / `kitchen-ssr` | 89 / 70 / 59 / 33 |
+| `print-lib` / `print-provider` / `print-security` / `print-ui` / `print-ssr` | 108 / 69 / 67 / 72 / 46 |
+
+Total: **1.424 asserções** em 26 harnesses.

@@ -9,6 +9,7 @@ import {
   CircleSlash,
   Flame,
   Loader2,
+  Printer,
   Send,
   Timer,
   Utensils,
@@ -307,6 +308,26 @@ export function KitchenCard({
                 {KITCHEN_ACTION_LABEL.cancel}
               </button>
             ))}
+
+          {/*
+            Etapa 18: a via em papel do que está na tela. Fica no card porque na
+            cozinha a pergunta "imprime esse pra mim?" nasce apontando para o
+            pedido. Abre em guia nova: o KDS não perde a posição nem o relógio.
+          */}
+          {/*
+            `<a>` e não `next/link`: a navegação é para fora do app (documento de
+            impressão, outra guia) e o Next não tem nada a pré-carregar aqui. De
+            quebra, mantém o card do KDS sem o router do Next no bundle.
+          */}
+          <a
+            href={`/app/pedidos/${order.id}/imprimir`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-ink-300 bg-white/70 text-sm font-semibold text-ink-700 hover:bg-white"
+          >
+            <Printer className="size-4" aria-hidden="true" />
+            Imprimir pedido
+          </a>
         </footer>
       )}
 

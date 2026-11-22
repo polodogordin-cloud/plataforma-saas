@@ -7,6 +7,7 @@ import { OrdersPanel } from "@/components/orders/orders-panel";
 import { getActiveRestaurant } from "@/lib/data/restaurants";
 import { getOrderBoardCounts } from "@/lib/data/orders-panel";
 import { getRestaurantTimezone } from "@/lib/data/timezone";
+import { getPrintConfig } from "@/lib/data/printing";
 
 export const metadata: Metadata = { title: "Pedidos" };
 
@@ -32,10 +33,15 @@ export default async function OrdersPage({
   const { tab } = await searchParams;
   const initialTab = TAB_IDS.includes(tab as TabId) ? (tab as TabId) : null;
 
-  const [counts, timeZone] = await Promise.all([
+  const [counts, timeZone, printConfig] = await Promise.all([
     getOrderBoardCounts(restaurant.id),
     getRestaurantTimezone(restaurant.id),
+    // Etapa 18: só o modo interessa aqui. A configuração inteira é da tela de
+    // impressão; trazer tudo para o painel seria peso sem uso.
+    getPrintConfig(restaurant.id),
   ]);
+
+  const autoPrint = printConfig.settings.mode === "auto" && printConfig.settings.print_orders;
 
   return (
     <>
@@ -66,6 +72,7 @@ export default async function OrdersPage({
           timeZone={timeZone}
           initialPending={counts.pending}
           initialTab={initialTab}
+          autoPrint={autoPrint}
         />
       </main>
     </>
