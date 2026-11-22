@@ -12,12 +12,15 @@ import { ShieldAlert, Store } from "lucide-react";
  *   • `unpublished` → a casa ainda não publicou / pausou o cardápio. Voltar mais
  *     tarde faz sentido.
  *   • `table` → a mesa foi desativada. Chamar um atendente resolve na hora.
+ *   • `order` → o pedido consultado não existe (ou é de outra mesa). Etapa 20:
+ *     quem abre o link de acompanhamento depois de limpar o navegador, ou troca
+ *     o número na URL, precisa de uma tela — antes via 404 genérico.
  *
  * Em nenhum caso revelamos se o token existe: a mensagem de mesa é a mesma para
  * token inválido, mesa desativada e casa fechada (Etapa 9 já fazia isso, e é o
  * comportamento certo).
  */
-type Reason = "suspended" | "unpublished" | "table";
+type Reason = "suspended" | "unpublished" | "table" | "order";
 
 export function MenuUnavailable({
   reason,
@@ -73,6 +76,18 @@ export function MenuUnavailable({
         <>
           O cardápio está fechado no momento ou esta mesa foi desativada. Chame
           um atendente — ele resolve rapidinho.
+        </>
+      ),
+      showHome: false,
+    },
+    order: {
+      icon: <span aria-hidden="true" className="text-xl">🧾</span>,
+      tone: "bg-ink-100 text-ink-600",
+      title: "Pedido não encontrado",
+      body: (
+        <>
+          Não achamos este pedido nesta mesa. Se você acabou de pedir, escaneie o
+          QR Code da mesa de novo ou chame um atendente.
         </>
       ),
       showHome: false,

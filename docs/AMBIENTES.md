@@ -416,10 +416,14 @@ Requer `npm ci` e, para os harnesses de UI/SSR, `npm install esbuild jsdom --no-
 | `kitchen-lib` / `kitchen-security` / `kitchen-ui` / `kitchen-ssr` | 89 / 70 / 59 / 33 |
 | `print-lib` / `print-provider` / `print-security` / `print-ui` / `print-ssr` | 108 / 69 / 67 / 72 / 46 |
 | `payments-lib` / `payments-security` / `payments-ui` / `payments-ssr` | 61 / 59 / 66 / 29 |
+| `security-lib` / `diagnostics-lib` | 40 / 58 |
+| `error-states` / `tenant-audit` | 65 / 29 |
 
-Total: **2.025 asserções** em 38 arquivos de harness, das quais **2.024 passam**.
-As duas únicas exceções são anteriores à Etapa 19: `pwa-nav` não chega a
-executar (falha de bundle) e `kitchen-ui` fica em 58/59 — ver a nota abaixo.
+Total: **2.217 asserções** contadas em 41 arquivos (os 42 arquivos da suíte
+menos `pwa-nav`), **todas passando** na execução de 2026-11-22. A única exceção
+continua anterior à Etapa 19: `pwa-nav` não chega a executar (falha de bundle) —
+ver a nota abaixo. `kitchen-ui` passou 59/59 nesta execução, mas a asserção de
+tempo continua dependente de horário (também ver a nota).
 
 > **`pwa-nav` é um harness em manutenção (falha desde antes da Etapa 19).**
 > Ele monta a `BottomNav` com `lucide-react` e o bundle recebe `undefined` em um

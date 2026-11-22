@@ -7,6 +7,7 @@ import {
   LogOut,
   ScrollText,
   ShieldCheck,
+  Activity,
   Store,
   UserRound,
   type LucideIcon,
@@ -74,6 +75,14 @@ export default async function AdminSettingsPage() {
       label: "Recebimento PIX",
       description: "Chave, recebedor e QR Code (master)",
       icon: Banknote,
+    },
+    // Etapa 20: estado técnico (banco, auth, storage, realtime, webhooks).
+    // Fica em Ajustes porque é ferramenta de operação, não de negócio.
+    {
+      href: "/admin/diagnostico",
+      label: "Diagnóstico técnico",
+      description: "Banco, autenticação, armazenamento e versão",
+      icon: Activity,
     },
     {
       href: "/app",
