@@ -62,7 +62,8 @@ export default async function PlansPage() {
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-ink-600">
             Comece grátis, cresça quando o salão encher. Sem fidelidade e sem cobrança automática nesta
-            versão — a troca é imediata e registrada.
+            versão — o pagamento é por PIX e o plano é liberado assim que confirmarmos o
+            recebimento.
           </p>
         </div>
 

@@ -131,14 +131,14 @@ export type PaymentProvider = {
 /* -------------------------------------------------------------------------- */
 
 const NOT_CONFIGURED =
-  "A cobrança automática ainda não está ligada nesta versão. O plano é ajustado pelo painel da plataforma.";
+  "A cobrança é manual por PIX nesta versão. Depois do pagamento, o plano é liberado pelo painel da plataforma.";
 
 /**
  * Provedor `manual`: registra a intenção e delega ao banco via RPC.
  *
- * Ele nunca marca uma assinatura como paga sozinho — isso continua sendo
- * decisão do admin (`admin_set_subscription`) ou do dono via `change_plan`,
- * que é o caminho sem cobrança desta etapa.
+ * Ele nunca marca uma assinatura como paga sozinho. Quem ativa plano pago é
+ * `admin_confirm_payment`, depois do PIX conferido (Etapa 19); `change_plan`
+ * só movimenta plano gratuito ou o intervalo do plano em que a casa já está.
  */
 export const manualProvider: PaymentProvider = {
   id: "manual",
@@ -367,6 +367,11 @@ export function translateBillingError(message: string | undefined): string {
     return `Este plano permite ${limit} ${nome}, mas você tem ${used}. Remova o excedente antes de mudar.`;
   }
   if (raw.includes("invalid_plan")) return "Este plano não está mais disponível.";
+  // Etapa 19b: plano pago novo não se ativa por aqui — o caminho é pedir o PIX
+  // e esperar a confirmação do master. A mensagem diz para onde ir.
+  if (raw.includes("payment_required")) {
+    return "Plano pago é liberado depois do pagamento por PIX. Peça o pagamento em \"Meu plano\" e aguarde a confirmação.";
+  }
   if (raw.includes("trial_already_used")) return "O período de teste já foi usado por este restaurante.";
   if (raw.includes("subscription_not_found")) return "Não há assinatura ativa para cancelar.";
   if (raw.includes("forbidden") || raw.includes("admin_forbidden")) {

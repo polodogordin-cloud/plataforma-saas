@@ -407,17 +407,19 @@ Requer `npm ci` e, para os harnesses de UI/SSR, `npm install esbuild jsdom --no-
 | Harness | Asserts |
 | --- | --- |
 | `prod-lib` / `prod-ssr` | 120 / 10 |
-| `pwa-security` / `pwa-sw` / `pwa-ssr` | 15 / 23 / 43 |
+| `pwa-lib` / `pwa-security` / `pwa-sw` / `pwa-ssr` / `pwa-ui` | 60 / 15 / 23 / 43 / 26 |
 | `whatsapp-lib` / `whatsapp-ui` / `whatsapp-ssr` | 103 / 56 / 51 |
-| `billing-lib` / `billing-ui` | 72 / 56 |
+| `billing-lib` / `billing-ui` / `billing-ssr` | 79 / 56 / 41 |
 | `analytics-lib` / `analytics-security` / `analytics-ui` | 64 / 95 / 48 |
-| `admin-lib` / `nav-fit` | 58 / 19 |
-| `theme-lib` / `theme-ssr` | 59 / 18 |
+| `admin-lib` / `admin-ui` / `admin-ssr` / `nav-fit` | 58 / 62 / 25 / 19 |
+| `theme-lib` / `theme-ui` / `theme-ssr` / `theme-upload` | 59 / 51 / 18 / 15 |
 | `kitchen-lib` / `kitchen-security` / `kitchen-ui` / `kitchen-ssr` | 89 / 70 / 59 / 33 |
 | `print-lib` / `print-provider` / `print-security` / `print-ui` / `print-ssr` | 108 / 69 / 67 / 72 / 46 |
 | `payments-lib` / `payments-security` / `payments-ui` / `payments-ssr` | 61 / 59 / 66 / 29 |
 
-Total: **1.659 asserções** em 30 harnesses.
+Total: **2.025 asserções** em 38 arquivos de harness, das quais **2.024 passam**.
+As duas únicas exceções são anteriores à Etapa 19: `pwa-nav` não chega a
+executar (falha de bundle) e `kitchen-ui` fica em 58/59 — ver a nota abaixo.
 
 > **`pwa-nav` é um harness em manutenção (falha desde antes da Etapa 19).**
 > Ele monta a `BottomNav` com `lucide-react` e o bundle recebe `undefined` em um
@@ -498,3 +500,52 @@ A ordem do histórico passou a usar `created_at desc, id desc`. Dentro de **uma
 mesma transação** `now()` é fixo, então duas solicitações criadas no mesmo bloco
 empata no timestamp; o desempate por `id` torna o teste determinístico. Em uso
 real cada RPC tem transação própria, e o `id` nunca decide a ordem.
+
+---
+
+## Migration 0020 — `change_plan` não vende mais plano
+
+Aplicada em `fjrvjnhnvjkpowxzxiez` como
+`20261122130000 stage19b_change_plan_requires_payment`. Fecha um caminho de
+ativação sem pagamento que a Etapa 19 deixou aberto.
+
+**O que estava errado:** `change_plan` (Etapa 11) inseria a assinatura já como
+`active`. Um dono de casa, chamando o PostgREST direto, ativava `premium` com um
+comando — sem PIX e sem passar pela tela nova.
+
+**Regra agora:** só passa sem pagamento quem não está comprando nada.
+
+| Chamada (dono da casa) | Resultado |
+| --- | --- |
+| migrar entre planos gratuitos | liberado |
+| trocar mensal ↔ anual no mesmo plano | liberado |
+| sair do grátis / subir para plano pago | `payment_required` (22023) |
+| entrar em plano pago sem assinatura | `payment_required` (22023) |
+| as mesmas chamadas como admin da plataforma | liberado, auditado `by_admin=true` |
+
+### Asserções rodadas (9/9 no banco real)
+
+| # | Teste | Esperado → obtido |
+| --- | --- | --- |
+| 0 | trigger de trial cria a assinatura da casa nova | `1` |
+| 1 | dono tenta `change_plan('…','premium')` | `payment_required` |
+| 2 | nenhuma assinatura premium criada | `0` |
+| 3 | espelho `restaurants.plan_id` continua `basico` | `basico` |
+| 4 | troca de intervalo no mesmo plano | `yearly` |
+| 5 | upgrade pago (`profissional`) segue bloqueado | `payment_required` |
+| 6 | plano inexistente segue recusado | `invalid_plan` |
+| 7 | master ajusta plano pago em suporte | `premium` |
+| 8 | auditoria separa dono de master | `by_admin=false` × `by_admin=true` (2 eventos) |
+
+> A asserção 8 falhou na primeira rodada como `false`: eu lia "o último evento"
+> com `order by created_at desc`, e as duas chamadas estavam na mesma transação —
+> `now()` é fixo, então o desempate é o `id`. Contando por ocorrência
+> (`by_admin=false` → 1, `by_admin=true` → 1, total → 2) fecha. É o mesmo cuidado
+> que a `0019` tomou no `my_payment_panel`.
+
+### Cobertura em código
+
+`billing-lib` passou de 72 para **79 asserções**: leem `0020` e verificam que a
+recusa existe, que a troca de intervalo continua livre, que o anti-downgrade e a
+autorização não foram perdidos, que o master mantém o ajuste com `by_admin` no
+log, e que o texto do erro chega em português à tela.
