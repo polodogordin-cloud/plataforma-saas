@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { trackOnboardingStep } from "@/lib/onboarding-progress";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveRestaurant } from "@/lib/data/restaurants";
 import { getRestaurantTheme } from "@/lib/data/theme";
@@ -141,6 +142,10 @@ export async function saveTheme(input: unknown): Promise<SaveThemeResult> {
   revalidatePath(`/r/${restaurant.slug}`, "layout");
   revalidatePath("/app/configuracoes/personalizacao");
   revalidatePath("/app");
+
+  // Etapa 21: salvar o tema fora do wizard também conta como etapa cumprida.
+  // Sem bloqueio de `await` — o dono já viu o "salvo"; a anotação é cosmética.
+  void trackOnboardingStep("aparencia");
 
   return {
     ok: true,

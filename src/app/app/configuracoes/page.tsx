@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   ChevronRight,
+  ListChecks,
   Receipt,
   CreditCard,
   LifeBuoy,

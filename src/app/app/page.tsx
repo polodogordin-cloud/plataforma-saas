@@ -22,7 +22,8 @@ import { OrderBoardCards } from "@/components/orders/order-board-cards";
 import { StatCard } from "@/components/app/stat-card";
 import { StatusToggle } from "@/components/app/status-toggle";
 import { PublicLink } from "@/components/app/public-link";
-import { Badge, Card, SectionTitle } from "@/components/ui/card";
+import { SetupProgressCard } from "@/components/onboarding/setup-progress-card";
+import { Card, SectionTitle } from "@/components/ui/card";
 import {
   getActiveRestaurant,
   getProfile,
@@ -33,6 +34,7 @@ import { getOrderBoardCounts } from "@/lib/data/orders-panel";
 import { isPlatformAdmin } from "@/lib/data/admin";
 import { tableRequestCounts } from "@/lib/data/table-requests";
 import { getMyPaymentPanel } from "@/lib/data/payments";
+import { getOnboardingSnapshot } from "@/lib/data/onboarding";
 import { PaymentStatusCard } from "@/components/payments/payment-status-card";
 import { paymentStage } from "@/lib/payments";
 import { RESTAURANT_ROLE_LABEL } from "@/lib/types";
@@ -114,19 +116,23 @@ export default async function DashboardPage({
   const { aviso } = await searchParams;
   const avisoTexto = aviso ? AVISOS[aviso] : undefined;
 
-  const [profile, counters, orderCounts, requestCounts, isAdmin, paymentPanel] = await Promise.all([
-    getProfile(user.id),
-    getRestaurantCounters(restaurant.id),
-    // Etapa 7: os três números do salão, numa RPC só.
-    getOrderBoardCounts(restaurant.id),
-    // Etapa 8: gente esperando atenção na mesa.
-    tableRequestCounts(restaurant.id),
-    // Etapa 10: atalho para o painel master, quando o usuário tem o papel.
-    isPlatformAdmin(),
-    // Etapa 19: em que pé está a cobrança. É a primeira coisa que o dono
-    // precisa saber quando o acesso está por um fio.
-    getMyPaymentPanel(restaurant.id),
-  ]);
+  const [profile, counters, orderCounts, requestCounts, isAdmin, paymentPanel, onboarding] =
+    await Promise.all([
+      getProfile(user.id),
+      getRestaurantCounters(restaurant.id),
+      // Etapa 7: os três números do salão, numa RPC só.
+      getOrderBoardCounts(restaurant.id),
+      // Etapa 8: gente esperando atenção na mesa.
+      tableRequestCounts(restaurant.id),
+      // Etapa 10: atalho para o painel master, quando o usuário tem o papel.
+      isPlatformAdmin(),
+      // Etapa 19: em que pé está a cobrança. É a primeira coisa que o dono
+      // precisa saber quando o acesso está por um fio.
+      getMyPaymentPanel(restaurant.id),
+      // Etapa 21: quanto falta para o restaurante estar configurado. Vem do
+      // checklist de dados reais, não do mapa de etapas do wizard.
+      getOnboardingSnapshot(restaurant.id),
+    ]);
 
   // Só ocupa espaço no topo quando há algo a dizer: pendente, vencendo,
   // expirado ou recém-confirmado. "Plano ativo" já está em Meu plano.
@@ -220,6 +226,13 @@ export default async function DashboardPage({
             <StatusToggle status={restaurant.status} />
           </div>
         </Card>
+
+        {/* Etapa 21: quanto falta para a configuração. Vem antes do link
+            público porque é a ação: o dono novo precisa saber o que fazer
+            antes de saber que o cardápio existe. */}
+        {onboarding && (
+          <SetupProgressCard overview={onboarding.checklist} onWizard={!onboarding.completed} />
+        )}
 
         {/* Cardápio público: o que o cliente vê e como compartilhar */}
         <PublicLink slug={restaurant.slug} status={restaurant.status} />
@@ -347,28 +360,35 @@ export default async function DashboardPage({
           </ul>
         </section>
 
-        {/* Checklist de primeiros passos: orienta quem acabou de entrar */}
+        {/*
+         * Etapa 21: o antigo checklist fixo de "Primeiros passos" saiu daqui.
+         *
+         * Ele era uma lista de cinco linhas escritas à mão que nunca mudava de
+         * estado — mostrava "Criar primeira categoria" mesmo depois de o dono
+         * ter criado dez. Foi substituído pelo `SetupProgressCard`, acima, que
+         * lê os dados reais e leva cada pendência para a tela que resolve.
+         *
+         * O que sobra aqui é a chamada para o passo a passo, que é o caminho
+         * guiado para quem ainda não montou o cardápio.
+         */}
         {!hasMenu && (
-          <section aria-labelledby="primeiros-passos">
-            <SectionTitle
-              title="Primeiros passos"
-              description="Complete para publicar seu cardápio."
-            />
-            <Card className="space-y-3">
-              <Step done label="Conta criada" />
-              <Step done label="Restaurante cadastrado" />
-              <Step label="Criar primeira categoria" />
-              <Step label="Adicionar produtos" />
-              <Step label="Publicar o cardápio" />
-              <Link
-                href="/app/cardapio"
-                className="tap-target mt-1 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-semibold text-white transition hover:bg-brand-700 active:scale-[0.99]"
-              >
-                <Plus className="size-4" aria-hidden="true" />
-                Começar pelo cardápio
-              </Link>
-            </Card>
-          </section>
+          <Link
+            href="/app/onboarding"
+            className="tap-target flex items-center gap-3 rounded-[var(--radius-card)] border border-brand-200 bg-brand-50 p-4 transition active:scale-[0.99]"
+          >
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
+              <Plus className="size-5" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-brand-900">
+                Montar meu cardápio em 8 passos
+              </span>
+              <span className="block text-xs leading-relaxed text-brand-800/80">
+                Guiado, um passo por tela. Dá para parar e continuar depois.
+              </span>
+            </span>
+            <ArrowRight className="size-5 shrink-0 text-brand-700" aria-hidden="true" />
+          </Link>
         )}
 
         <p className="pb-2 text-center text-xs leading-relaxed text-ink-400">
@@ -376,38 +396,5 @@ export default async function DashboardPage({
         </p>
       </main>
     </>
-  );
-}
-
-function Step({ done = false, label }: { done?: boolean; label: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <span
-        className={
-          done
-            ? "grid size-6 shrink-0 place-items-center rounded-full bg-brand-600 text-white"
-            : "grid size-6 shrink-0 place-items-center rounded-full border-2 border-dashed border-ink-300"
-        }
-        aria-hidden="true"
-      >
-        {done && (
-          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="3.5">
-            <path d="m5 13 4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
-      </span>
-      <span
-        className={done ? "text-sm text-ink-400 line-through" : "text-sm font-medium text-ink-700"}
-      >
-        {label}
-      </span>
-      {done ? (
-        <Badge tone="success" className="ml-auto">
-          Feito
-        </Badge>
-      ) : (
-        <span className="ml-auto text-xs text-ink-400">Em breve</span>
-      )}
-    </div>
   );
 }
