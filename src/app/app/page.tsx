@@ -32,6 +32,9 @@ import {
 import { getOrderBoardCounts } from "@/lib/data/orders-panel";
 import { isPlatformAdmin } from "@/lib/data/admin";
 import { tableRequestCounts } from "@/lib/data/table-requests";
+import { getMyPaymentPanel } from "@/lib/data/payments";
+import { PaymentStatusCard } from "@/components/payments/payment-status-card";
+import { paymentStage } from "@/lib/payments";
 import { RESTAURANT_ROLE_LABEL } from "@/lib/types";
 import { firstName } from "@/lib/utils";
 
@@ -106,7 +109,7 @@ export default async function DashboardPage({
   const { aviso } = await searchParams;
   const avisoTexto = aviso ? AVISOS[aviso] : undefined;
 
-  const [profile, counters, orderCounts, requestCounts, isAdmin] = await Promise.all([
+  const [profile, counters, orderCounts, requestCounts, isAdmin, paymentPanel] = await Promise.all([
     getProfile(user.id),
     getRestaurantCounters(restaurant.id),
     // Etapa 7: os três números do salão, numa RPC só.
@@ -115,7 +118,19 @@ export default async function DashboardPage({
     tableRequestCounts(restaurant.id),
     // Etapa 10: atalho para o painel master, quando o usuário tem o papel.
     isPlatformAdmin(),
+    // Etapa 19: em que pé está a cobrança. É a primeira coisa que o dono
+    // precisa saber quando o acesso está por um fio.
+    getMyPaymentPanel(restaurant.id),
   ]);
+
+  // Só ocupa espaço no topo quando há algo a dizer: pendente, vencendo,
+  // expirado ou recém-confirmado. "Plano ativo" já está em Meu plano.
+  const paymentStep = paymentStage(paymentPanel);
+  const showPaymentBanner =
+    paymentStep === "no_plan" ||
+    paymentStep === "pending" ||
+    paymentStep === "expiring" ||
+    paymentStep === "expired";
 
   const awaitingAttention = requestCounts.pending + requestCounts.acknowledged;
 
@@ -203,6 +218,14 @@ export default async function DashboardPage({
 
         {/* Cardápio público: o que o cliente vê e como compartilhar */}
         <PublicLink slug={restaurant.slug} status={restaurant.status} />
+
+        {/* Etapa 19: cobrança. Fica acima dos números porque plano vencido
+            significa que o painel pode parar de funcionar. */}
+        {showPaymentBanner && (
+          <Link href="/app/pagamento" className="block" aria-label="Ver pagamento do plano">
+            <PaymentStatusCard panel={paymentPanel} compact />
+          </Link>
+        )}
 
         {/* Etapa 8: alguém na mesa está esperando. Vem antes dos pedidos
             porque o cliente que levantou a mão está olhando para o salão. */}

@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CalendarClock, ShieldQuestion } from "lucide-react";
+import { ArrowRight, CalendarClock, ShieldQuestion } from "lucide-react";
 import { AppHeader } from "@/components/app/app-header";
 import { Badge, Card, SectionTitle } from "@/components/ui/card";
-import { PlanSwitcher, StartTrialButton } from "@/components/billing/plan-switcher";
+import { StartTrialButton } from "@/components/billing/plan-switcher";
+import { PaymentStatusCard } from "@/components/payments/payment-status-card";
+import { PlanPixPicker } from "@/components/payments/plan-pix-picker";
 import { FeatureList, PlanPrice, SubscriptionBadge } from "@/components/billing/plan-card";
 import { UsageMeter } from "@/components/billing/usage-meter";
 import { getActiveRestaurant } from "@/lib/data/restaurants";
 import { getMySubscription, listAdminPlans } from "@/lib/data/billing";
+import { getMyPaymentPanel } from "@/lib/data/payments";
+import { paymentStage } from "@/lib/payments";
 import {
   daysUntil,
   formatUsage,
@@ -41,10 +45,16 @@ export default async function MyPlanPage() {
   const restaurant = await getActiveRestaurant();
   if (!restaurant) redirect("/onboarding");
 
-  const [subscription, plans] = await Promise.all([
+  const [subscription, plans, paymentPanel] = await Promise.all([
     getMySubscription(restaurant.id),
     listAdminPlans(),
+    getMyPaymentPanel(restaurant.id),
   ]);
+
+  // Etapa 19: o estágio comercial (sem plano / aguardando / confirmado / ativo /
+  // vencendo / expirado) vem de uma função só, a mesma do dashboard e da tela
+  // de pagamento — para as três telas não contarem histórias diferentes.
+  const stage = paymentStage(paymentPanel);
 
   const canManage = restaurant.role === "owner" || restaurant.role === "admin";
 
@@ -152,14 +162,33 @@ export default async function MyPlanPage() {
               {canManage && <StartTrialButton days={subscription.trial_days} />}
             </div>
           )}
-
-          <PlanSwitcher
-            currentPlanId={subscription.plan.id}
-            plans={visiblePlans}
-            canManage={canManage}
-            blockedPlans={blockedPlans}
-          />
         </Card>
+
+        {/* Etapa 19: estado do pagamento (aguardando / confirmado / vencendo…). */}
+        <PaymentStatusCard panel={paymentPanel} compact />
+
+        {/* Etapa 19: contratar/renovar passa por PIX, com confirmação manual.
+            O preço mostrado vem do catálogo e o valor gravado vem do banco —
+            a tela não envia preço em lugar nenhum. */}
+        <PlanPixPicker
+          plans={visiblePlans.filter((plan) => plan.price > 0)}
+          currentPlanId={subscription.plan.id}
+          currentInterval={subscription.plan.interval}
+          pix={paymentPanel?.pix ?? { is_active: false, is_configured: false, recipient_name: null, pix_key: null, pix_key_type: null, instructions: null, qr_code_url: null }}
+          canManage={canManage}
+          blockedPlans={blockedPlans}
+          hasPending={Boolean(paymentPanel?.pending)}
+        />
+
+        {stage === "pending" && (
+          <Link
+            href="/app/pagamento"
+            className="tap-target flex min-h-11 items-center justify-between rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm font-semibold text-amber-900"
+          >
+            Ver instruções do PIX
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </Link>
+        )}
 
         {/* Recursos */}
         <Card>

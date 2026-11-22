@@ -82,6 +82,15 @@ export type PaymentProvider = {
   readonly label: string;
   /** `false` = não cobra de verdade. A UI usa isso para não prometer nada. */
   readonly live: boolean;
+  /**
+   * Como o cliente paga, quando existe um caminho sem gateway (Etapa 19).
+   *
+   * `manual_pix` = a plataforma tem uma chave PIX e confere o recebimento à mão.
+   * `none` = não há como pagar por aqui. É um campo descritivo: a tela usa para
+   * escolher entre "ver o PIX" e "fale com o suporte" — e **nunca** para
+   * concluir que um pagamento aconteceu.
+   */
+  readonly settlement: "manual_pix" | "none";
 
   createCustomer(input: {
     restaurantId: string;
@@ -135,6 +144,7 @@ export const manualProvider: PaymentProvider = {
   id: "manual",
   label: "Ajuste manual",
   live: false,
+  settlement: "none",
 
   async createCustomer({ restaurantId, email, name }) {
     return { externalId: null, email, name: name || restaurantId };
@@ -184,6 +194,84 @@ export const manualProvider: PaymentProvider = {
 };
 
 /* -------------------------------------------------------------------------- */
+/* Provedor PIX manual (Etapa 19)                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Provedor `manual_pix`: o cliente paga no PIX da plataforma e uma pessoa
+ * confirma.
+ *
+ * O que ele é: um **caminho de pagamento real** sem gateway. A cobrança
+ * acontece (dinheiro entra na conta do dono), e a confirmação é humana —
+ * registrada em `payment_requests` + `admin_audit_log`.
+ *
+ * O que ele **não** é, e por isso `live: false` continua:
+ *   • não cria customer/subscription no gateway (não existe gateway);
+ *   • não gera checkout URL (a "URL" é a própria tela de pagamento interna);
+ *   • não trata webhook — `handleWebhook` devolve `handled: false` com uma
+ *     mensagem honesta. Não existe rota falsa de webhook em lugar nenhum.
+ *
+ * Quando Stripe/MP/Asaas entrar, este provedor continua útil: a maioria das
+ * casas brasileiras ainda vai preferir pagar por PIX e ter o comprovante
+ * conferido por gente. O escopo da Etapa 19 escolheu exatamente esse caminho.
+ */
+export const manualPixProvider: PaymentProvider = {
+  id: "manual_pix",
+  label: "PIX manual",
+  live: false,
+  settlement: "manual_pix",
+
+  async createCustomer({ restaurantId, email, name }) {
+    return { externalId: null, email, name: name || restaurantId };
+  },
+
+  async createSubscription({ planId, interval }) {
+    return {
+      url: null,
+      externalSubscriptionId: null,
+      // `false` porque não há provedor externo: o "checkout" é a tela interna
+      // que mostra a chave PIX. A assinatura só nasce quando alguém confirma.
+      requiresProvider: false,
+      message: `Solicitação de ${planId} (${interval === "yearly" ? "anual" : "mensal"}) por PIX. Faça o pagamento e aguarde a confirmação da plataforma.`,
+    };
+  },
+
+  async cancelSubscription({ subscription }) {
+    if (!subscription) {
+      return { ok: false, message: "Esta casa não tem assinatura corrente para cancelar." };
+    }
+    return {
+      ok: true,
+      message: `Cancelamento registrado. O acesso segue até ${subscription.current_period_end ?? "o fim do período"}.`,
+    };
+  },
+
+  async changePlan({ planId }) {
+    return {
+      ok: true,
+      requiresProvider: true,
+      message: `A troca para ${planId} passa por um novo pagamento por PIX e pela confirmação da plataforma.`,
+    };
+  },
+
+  async getSubscriptionStatus({ subscription }) {
+    return {
+      status: subscription?.status ?? null,
+      syncedAt: new Date().toISOString(),
+    };
+  },
+
+  async handleWebhook() {
+    return {
+      handled: false,
+      status: null,
+      message:
+        "PIX manual não envia webhook: a confirmação é feita por um administrador no painel, com auditoria.",
+    };
+  },
+};
+
+/* -------------------------------------------------------------------------- */
 /* Seleção do provedor                                                         */
 /* -------------------------------------------------------------------------- */
 
@@ -196,13 +284,21 @@ export const manualProvider: PaymentProvider = {
  * env, e o resultado do manual é "não cobra", que é o estado atual.
  */
 export function getPaymentProvider(): PaymentProvider {
-  const configured = (process.env.PAYMENT_PROVIDER ?? "manual").trim().toLowerCase();
+  const configured = (process.env.PAYMENT_PROVIDER ?? "manual_pix").trim().toLowerCase();
   switch (configured) {
+    // Etapa 19: PIX manual é o caminho ligado por padrão — é o único em que
+    // dinheiro entra de verdade hoje. `manual` continua existindo como o modo
+    // "sem cobrança" (ajuste direto pelo painel), útil para cortesia/teste.
+    case "manual_pix":
+    case "pix":
+      return manualPixProvider;
+    case "manual":
+      return manualProvider;
     // case "stripe": return stripeProvider;
     // case "mercadopago": return mercadoPagoProvider;
     // case "asaas": return asaasProvider;
     default:
-      return manualProvider;
+      return manualPixProvider;
   }
 }
 

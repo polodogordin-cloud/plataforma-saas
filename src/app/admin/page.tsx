@@ -11,6 +11,8 @@ import {
   UtensilsCrossed,
   Users,
   CreditCard,
+  Banknote,
+  Clock3,
   Receipt,
   ChartNoAxesColumn,
   ChevronRight,
@@ -19,6 +21,7 @@ import { AdminHeader } from "@/components/admin/admin-header";
 import { MetricCard } from "@/components/admin/metric-card";
 import { getAdminDashboard, listAdminAudit, listAdminRestaurants } from "@/lib/data/admin";
 import { getBillingSummary } from "@/lib/data/billing";
+import { getAdminPaymentSummary } from "@/lib/data/payments";
 import { formatDate } from "@/lib/utils";
 import { AUDIT_ACTION_LABEL } from "@/lib/admin-audit";
 
@@ -34,11 +37,13 @@ export const dynamic = "force-dynamic";
  * — número sem ação não resolve nada.
  */
 export default async function AdminDashboardPage() {
-  const [metrics, recent, audit, billing] = await Promise.all([
+  const [metrics, recent, audit, billing, payments] = await Promise.all([
     getAdminDashboard(),
     listAdminRestaurants(),
     listAdminAudit(6),
     getBillingSummary(),
+    // Etapa 19: dinheiro esperando conferência é a primeira coisa da manhã.
+    getAdminPaymentSummary(),
   ]);
 
   if (!metrics) {
@@ -134,6 +139,49 @@ export default async function AdminDashboardPage() {
             </Link>
           </p>
         </section>
+
+        {/* Pagamentos PIX (Etapa 19) */}
+        {payments && (
+          <section aria-labelledby="metricas-pagamentos">
+            <h2 id="metricas-pagamentos" className="mb-2.5 text-sm font-semibold text-ink-700">
+              Pagamentos PIX
+            </h2>
+            <div className="grid grid-cols-2 gap-2.5">
+              <MetricCard
+                label="Aguardando confirmação"
+                value={payments.pending}
+                icon={Clock3}
+                href="/admin/pagamentos?status=PENDING"
+                tone={payments.pending > 0 ? "amber" : "neutral"}
+                hint="Conferir o recebimento"
+              />
+              <MetricCard
+                label="Confirmado no mês"
+                value={payments.confirmed_amount_month}
+                icon={Banknote}
+                href="/admin/pagamentos?status=CONFIRMED"
+                tone="brand"
+                format="currency"
+              />
+            </div>
+            <p className="mt-2 text-xs text-ink-500">
+              A confirmação é sempre manual:{" "}
+              <Link
+                href="/admin/pagamentos"
+                className="font-medium text-brand-700 underline-offset-2 hover:underline"
+              >
+                abrir fila de pagamentos
+              </Link>
+              {" · "}
+              <Link
+                href="/admin/settings/payment"
+                className="font-medium text-brand-700 underline-offset-2 hover:underline"
+              >
+                dados de recebimento
+              </Link>
+            </p>
+          </section>
+        )}
 
         {/* Comercial (Etapa 11) */}
         {billing && (
