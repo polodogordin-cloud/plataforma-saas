@@ -1691,3 +1691,166 @@ export type PrintOrderDocument = {
     }>;
   };
 };
+
+/* ==========================================================================
+   Etapa 19 · Cobrança manual via PIX
+   ========================================================================== */
+
+/**
+ * Ciclo da solicitação de pagamento (enum `payment_request_status`).
+ *
+ * Maiúsculas de propósito: é o vocabulário do escopo desta etapa e o que o
+ * banco grava. A tela traduz; o código nunca compara com rótulo.
+ */
+export type PaymentRequestStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "CANCELLED";
+
+export const PAYMENT_REQUEST_STATUS_LABEL: Record<PaymentRequestStatus, string> = {
+  PENDING: "Aguardando confirmação",
+  CONFIRMED: "Pagamento confirmado",
+  REJECTED: "Pagamento rejeitado",
+  CANCELLED: "Cancelado",
+};
+
+export const PAYMENT_REQUEST_STATUS_TONE: Record<
+  PaymentRequestStatus,
+  "success" | "warning" | "info" | "danger" | "neutral"
+> = {
+  PENDING: "warning",
+  CONFIRMED: "success",
+  REJECTED: "danger",
+  CANCELLED: "neutral",
+};
+
+/** Único método existente hoje. Nome igual ao enum do banco. */
+export type PaymentRequestMethod = "MANUAL_PIX";
+
+/** Nome do método de assinatura (`payment_request_method`). */
+export const PAYMENT_REQUEST_METHOD_LABEL: Record<PaymentRequestMethod, string> = {
+  MANUAL_PIX: "PIX manual",
+};
+
+/** Tipo de chave PIX — só rótulo de tela, o banco não valida formato. */
+export type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
+
+export const PIX_KEY_TYPE_LABEL: Record<PixKeyType, string> = {
+  cpf: "CPF",
+  cnpj: "CNPJ",
+  email: "E-mail",
+  phone: "Telefone",
+  random: "Chave aleatória",
+};
+
+/** Dados de recebimento que o restaurante pode ver. Nada de infraestrutura. */
+export type PixSettings = {
+  is_active: boolean;
+  is_configured: boolean;
+  recipient_name: string | null;
+  pix_key: string | null;
+  pix_key_type: PixKeyType | null;
+  instructions: string | null;
+  qr_code_url: string | null;
+};
+
+/** Solicitação como o restaurante a vê. */
+export type PaymentRequestSummary = {
+  id: string;
+  plan_id: string;
+  plan_name: string;
+  amount: number;
+  billing_interval: BillingInterval;
+  payment_method: PaymentRequestMethod;
+  status: PaymentRequestStatus;
+  receipt_path: string | null;
+  receipt_note: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+};
+
+/**
+ * Estado do pagamento visto pelo painel do restaurante (`my_payment_panel`).
+ *
+ * `subscription.days_left` é a única fonte do "vence em X dias": a mesma conta
+ * do banco, para as três telas que mostram o aviso não divergirem.
+ */
+export type MyPaymentPanel = {
+  restaurant_id: string;
+  pix: PixSettings;
+  pending: PaymentRequestSummary | null;
+  history: PaymentRequestSummary[];
+  subscription: {
+    status: SubscriptionState;
+    has_subscription: boolean;
+    plan_id: string | null;
+    period_start: string | null;
+    period_end: string | null;
+    trial_end: string | null;
+    days_left: number | null;
+  };
+};
+
+/** Linha de `/admin/pagamentos` (`admin_list_payment_requests`). */
+export type AdminPaymentRequestRow = {
+  id: string;
+  restaurant_id: string;
+  restaurant_name: string;
+  restaurant_slug: string;
+  requester_name: string | null;
+  requester_email: string | null;
+  plan_id: string;
+  plan_name: string;
+  billing_interval: BillingInterval;
+  amount: number;
+  payment_method: PaymentRequestMethod;
+  status: PaymentRequestStatus;
+  receipt_path: string | null;
+  receipt_uploaded_at: string | null;
+  transaction_reference: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+  period_days: number | null;
+  subscription_id: string | null;
+  confirmed_by_email: string | null;
+};
+
+/** Detalhe do pagamento para o painel master (`admin_payment_request`). */
+export type AdminPaymentRequestDetail = AdminPaymentRequestRow & {
+  receipt_note: string | null;
+  notes: string | null;
+  paid_at: string | null;
+  subscription: {
+    status: SubscriptionState;
+    plan_id: string | null;
+    period_start: string | null;
+    period_end: string | null;
+    trial_end: string | null;
+  };
+};
+
+/**
+ * Configuração global do PIX vista pelo admin.
+ *
+ * `can_edit` reflete `is_platform_owner()`: um admin operacional confirma
+ * pagamentos mas **não** troca a chave de recebimento. A tela usa isso só para
+ * desabilitar o formulário — quem recusa de verdade é o banco.
+ */
+export type AdminPaymentSettings = {
+  is_active: boolean;
+  recipient_name: string | null;
+  pix_key: string | null;
+  pix_key_type: PixKeyType | null;
+  instructions: string | null;
+  qr_code_url: string | null;
+  updated_at: string | null;
+  updated_by_email: string | null;
+  can_edit: boolean;
+};
+
+/** Contadores do dashboard master (`admin_payment_summary`). */
+export type AdminPaymentSummary = {
+  pending: number;
+  confirmed: number;
+  rejected: number;
+  confirmed_amount_month: number;
+};

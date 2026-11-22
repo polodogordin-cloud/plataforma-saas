@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
+  Banknote,
   ChevronRight,
   CreditCard,
   LogOut,
@@ -59,6 +60,20 @@ export default async function AdminSettingsPage() {
       label: "Assinaturas",
       description: "Plano, status e período de cada casa",
       icon: CreditCard,
+    },
+    // Etapa 19: onde a plataforma recebe a assinatura por PIX. Separado de
+    // "Planos" porque é dado de recebimento (chave, recebedor, QR), não catálogo.
+    {
+      href: "/admin/pagamentos",
+      label: "Pagamentos",
+      description: "Fila de PIX aguardando confirmação",
+      icon: Banknote,
+    },
+    {
+      href: "/admin/settings/payment",
+      label: "Recebimento PIX",
+      description: "Chave, recebedor e QR Code (master)",
+      icon: Banknote,
     },
     {
       href: "/app",

@@ -51,7 +51,12 @@ export async function updateSession(request: NextRequest) {
     pathname === "/kitchen" ||
     pathname.startsWith("/kitchen/") ||
     pathname === "/admin" ||
-    pathname.startsWith("/admin/");
+    pathname.startsWith("/admin/") ||
+    // Etapa 19: `/dashboard/billing` é o endereço que o escopo usa para a tela
+    // de pagamento (o app fala pt-BR e a página real é `/app/pagamento`). Sem
+    // esta linha, o alias abriria sem sessão e só falharia lá dentro.
+    pathname === "/dashboard" ||
+    pathname.startsWith("/dashboard/");
 
   const isAuthPage =
     pathname === "/entrar" || pathname === "/criar-conta" || pathname === "/recuperar-senha";

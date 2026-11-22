@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   ChevronRight,
+  Receipt,
   CreditCard,
   LifeBuoy,
   LogOut,
@@ -80,6 +81,15 @@ const groups: { title: string; items: Item[] }[] = [
         label: "Meu plano",
         description: "Plano atual, recursos e limites",
         icon: CreditCard,
+      },
+      // Etapa 19: a cobrança deixou de ser "troca registrada na hora" e virou
+      // PIX com confirmação manual. A tela de pagamento tem entrada própria
+      // porque é onde o dono volta para ver o status e anexar comprovante.
+      {
+        href: "/app/pagamento",
+        label: "Pagamento do plano",
+        description: "PIX, comprovante e histórico",
+        icon: Receipt,
       },
       {
         label: "Ajuda e suporte",

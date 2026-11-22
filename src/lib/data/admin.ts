@@ -32,6 +32,21 @@ export const isPlatformAdmin = cache(async (): Promise<boolean> => {
   return data === true;
 });
 
+/**
+ * MASTER_ADMIN (Etapa 19).
+ *
+ * `isPlatformAdmin()` abre o painel inteiro; `isPlatformOwner()` responde se o
+ * usuário é `owner` em `platform_admins`. A diferença importa em um lugar só —
+ * os dados de recebimento do PIX — mas a tela precisa saber para habilitar o
+ * formulário. Quem recusa é a RPC `admin_save_payment_settings`.
+ */
+export const isPlatformOwner = cache(async (): Promise<boolean> => {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("is_platform_owner");
+  if (error) return false;
+  return data === true;
+});
+
 export const getAdminDashboard = cache(async (): Promise<AdminDashboard | null> => {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("admin_dashboard");

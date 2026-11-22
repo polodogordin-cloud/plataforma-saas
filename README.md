@@ -1503,6 +1503,120 @@ papel):
 
 ---
 
+## Cobrança manual por PIX (Etapa 19)
+
+A plataforma cobra a assinatura **sem gateway**: o cliente escolhe o plano, paga
+no PIX do dono da plataforma e um administrador confere o recebimento antes de
+liberar o acesso. Não existe webhook, não existe confirmação automática e nada
+nesta etapa finge que existe.
+
+### O fluxo, do começo ao fim
+
+1. **Escolher o plano** (`/app/plano` → `PlanPixPicker`). A tela mostra o preço
+   do ciclo — mensal = preço do catálogo, anual = 12× sem desconto — e envia
+   apenas `planId` e `interval`.
+2. **Solicitação criada** (`request_plan_payment`). O banco lê o preço de
+   `plans`, congela em `payment_requests.amount` e grava `PENDING`. Uma
+   pendente por casa: pedir de novo cancela a anterior em vez de acumular.
+3. **Pagar o PIX** (`/app/pagamento`, também em `/dashboard/billing`). Mostra
+   recebedor, chave copiável, QR Code opcional e a instrução de que a
+   confirmação é **manual**.
+4. **Comprovante (opcional)**. Upload direto para o bucket privado
+   `payment-receipts`, no caminho `{restaurant_id}/receipts/...`. Anexar
+   comprovante **não** confirma nada.
+5. **Conferir e confirmar** (`/admin/pagamentos/[id]`). O aviso é literal:
+   *"Confirme somente após verificar o recebimento do PIX."* Confirmar chama
+   `admin_confirm_payment`, que fecha a assinatura corrente, abre a nova em
+   `subscriptions` (`active`, 30 dias mensal / 365 anual, preço congelado,
+   `payment_method = MANUAL_PIX`, `payment_request_id`, `activated_by`) e grava
+   `MANUAL_PAYMENT_CONFIRMED` em `admin_audit_log`.
+6. **Rejeitar** (`admin_reject_payment`) exige motivo, não toca na assinatura e
+   aparece no histórico do cliente.
+
+### Quem pode o quê
+
+| Ação | Restaurante (owner/admin) | Admin da plataforma | MASTER_ADMIN |
+| --- | --- | --- | --- |
+| Criar solicitação | sim | sim | sim |
+| Anexar comprovante | sim (só da própria casa) | sim | sim |
+| Ver histórico | só da própria casa | todas | todas |
+| Confirmar / rejeitar / cancelar | **não** | sim | sim |
+| Ajustar duração do período | não | **não** | sim (auditado) |
+| Alterar chave/recebedor do PIX | não | **não** (leitura) | sim |
+
+`MASTER_ADMIN` é `role = 'owner'` em `platform_admins` (`is_platform_owner()`).
+Confirmar pagamentos e trocar a chave que recebe o dinheiro são degraus
+diferentes de propósito.
+
+### O que a arquitetura mantém
+
+- **`PaymentProvider` continua o contrato** (`src/lib/billing/index.ts`). O
+  provedor novo é `manualPixProvider` (`settlement: "manual_pix"`,
+  `live: false`), ligado por `PAYMENT_PROVIDER` — troca é configuração, não
+  deploy. `getPaymentProvider()` cai em `manual_pix` por padrão.
+- **Quem decide o estado da assinatura é o banco.** O provedor só descreve o
+  caminho de pagamento; nenhuma função do provedor escreve em `subscriptions`.
+- **Nenhuma tabela de assinatura nova.** `payment_requests` é a *solicitação*;
+  `subscriptions` (Etapa 11) continua sendo o contrato, agora com
+  `payment_request_id`, `payment_method`, `activated_by` e `activated_at`.
+- **Comprovante é dado financeiro.** Bucket privado, `file_size_limit` de 5 MB,
+  leitura por URL assinada de 5 minutos, escrita só no diretório do próprio
+  tenant (e do admin global).
+- **Configuração do PIX é global e fechada.** Uma linha em `payment_settings`,
+  sem policy de leitura: o cliente recebe só os campos de recebimento por
+  `my_payment_panel`; o admin pelo `admin_payment_settings`.
+
+### Estados no painel do restaurante
+
+`paymentStage()` (módulo neutro `src/lib/payments.ts`) resume assinatura +
+pedido pendente em seis estágios, e o mesmo texto aparece no dashboard, em
+"Meu plano" e na tela de pagamento:
+
+| Estágio | Texto |
+| --- | --- |
+| `no_plan` | "Escolha um plano para liberar o painel completo." |
+| `pending` | "Pagamento aguardando confirmação…" |
+| `confirmed` | "Pagamento confirmado. Seu plano está ativo." |
+| `active` | "Plano ativo." |
+| `expiring` | "Seu plano vence em X dias." (janela de 7 dias) |
+| `expired` | "Seu plano expirou. Faça um novo PIX para reativar o acesso." |
+
+Precedência: pendente vence tudo; vencido vence ativo; `justConfirmed` só
+aparece depois do retorno da confirmação.
+
+### Rotas
+
+| Rota | Quem | O que é |
+| --- | --- | --- |
+| `/app/pagamento` | restaurante | instruções de PIX, comprovante, histórico |
+| `/dashboard/billing` | restaurante | alias da mesma tela (nome do escopo) |
+| `/admin/pagamentos` | plataforma | fila de solicitações, pendentes primeiro |
+| `/admin/pagamentos/[id]` | plataforma | detalhe, comprovante, confirmar/rejeitar |
+| `/admin/settings/payment` | plataforma (edita: master) | chave, recebedor, QR, ligar/desligar |
+
+### Verificação
+
+- `0019_payments.sql` aplicada no Supabase; 20 asserções SQL em transação com
+  `rollback` (8 do escopo + master/tenant/preço/idempotência) — resultados em
+  `docs/AMBIENTES.md`.
+- `payments-lib` (61), `payments-security` (59), `payments-ui` (66),
+  `payments-ssr` (29). Suíte total: **1.659 asserções em 30 harnesses**.
+- `tsc --noEmit` e `next build` verdes; `/admin/pagamentos`,
+  `/admin/pagamentos/[id]`, `/admin/settings/payment`, `/app/pagamento` e
+  `/dashboard/billing` no manifesto de rotas.
+
+### Lacunas conhecidas
+
+- **Renovação é manual de ponta a ponta.** O aviso "vence em X dias" existe,
+  mas nada cobra sozinho: o cliente pede de novo e o admin confirma de novo.
+- **Sem gateway, sem webhook, sem recibo fiscal.** É o recorte pedido; o
+  contrato `PaymentProvider` já prevê a entrada de um provedor real sem
+  reescrever tela.
+- **Comprovante é conferência humana.** Não há OCR nem verificação de
+  comprovante — e o desenho é esse: quem confirma é gente.
+
+---
+
 ## Rotas
 
 | Rota                                  | Descrição                                       |

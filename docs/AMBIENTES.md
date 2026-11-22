@@ -415,5 +415,86 @@ Requer `npm ci` e, para os harnesses de UI/SSR, `npm install esbuild jsdom --no-
 | `theme-lib` / `theme-ssr` | 59 / 18 |
 | `kitchen-lib` / `kitchen-security` / `kitchen-ui` / `kitchen-ssr` | 89 / 70 / 59 / 33 |
 | `print-lib` / `print-provider` / `print-security` / `print-ui` / `print-ssr` | 108 / 69 / 67 / 72 / 46 |
+| `payments-lib` / `payments-security` / `payments-ui` / `payments-ssr` | 61 / 59 / 66 / 29 |
 
-Total: **1.424 asserções** em 26 harnesses.
+Total: **1.659 asserções** em 30 harnesses.
+
+> **`pwa-nav` é um harness em manutenção (falha desde antes da Etapa 19).**
+> Ele monta a `BottomNav` com `lucide-react` e o bundle recebe `undefined` em um
+> dos ícones (`Element type is invalid ... Check the render method of BottomNav`).
+> Confirmado por `git stash` na Etapa 19: falha igual sem nenhuma mudança desta
+> etapa. A navegação do painel está coberta por `admin-ui` (62) e `pwa-ui` (26),
+> então o item não bloqueia build nem deploy — mas o arquivo continua no
+> repositório e deve ser corrigido na próxima etapa que mexer na barra inferior.
+> **`kitchen-ui` tem 1 falha conhecida e dependente de horário:** o contador de
+> tempo (`01:44` num pedido supostamente de 5 min) usa `Date.now()`, e o teste
+> compara com um `created_at` fixo; fora de uma janela específica do dia ele
+> passa. Também pré-existente à Etapa 19.
+
+---
+
+## Cobrança manual por PIX (Etapa 19) — verificação no banco
+
+Migration `0019_payments.sql` aplicada em `fjrvjnhnvjkpowxzxiez` (registrada em
+`supabase_migrations.schema_migrations` como `stage19_payments`). As asserções
+abaixo rodaram em `begin … rollback`, com `set local role authenticated` e
+`request.jwt.claims` trocado entre o dono da casa de teste e o **MASTER_ADMIN**
+real (`87435001-c429-4b5c-951d-f646a4a3a057`).
+
+> **Nota de método:** `set local role authenticated` é obrigatório. Sem ele a
+> consulta roda como `postgres`, que **ignora RLS** — e um `update` que deveria
+> ser negado passaria, dando falso negativo de segurança.
+
+### Os 8 testes obrigatórios do escopo
+
+| # | Teste | Resultado |
+| --- | --- | --- |
+| T1 | criar solicitação → `PENDING` | ✅ `PENDING` |
+| T2 | restaurante tenta `CONFIRMED` | ✅ negado (`insufficient_privilege`, RLS + sem grant) |
+| T3 | restaurante ativa a própria assinatura | ✅ negado (`admin_forbidden`) |
+| T4 | usuário comum chama RPC admin | ✅ negado (`admin_forbidden`) |
+| T5 | admin confirma → `CONFIRMED` + `ACTIVE` | ✅ `CONFIRMED` / `active` / 30 dias |
+| T6 | admin rejeita → `REJECTED`, sem ativação | ✅ `REJECTED`, plano e status intactos |
+| T7 | restaurante A vê pagamento de B | ✅ 0 linhas (RLS) e `forbidden` no painel de outra casa |
+| T8 | preço adulterado no frontend | ✅ banco grava R$ 99,90 (mensal) e R$ 1.198,80 (anual) |
+
+### Asserções complementares (rodada final: 15/15)
+
+| # | Teste | Esperado → obtido |
+| --- | --- | --- |
+| 1 | solicitar cria `PENDING` | `PENDING` |
+| 2 | valor vem do banco | `99.90` |
+| 3 | confirmar | `CONFIRMED` |
+| 4 | assinatura ativada | `active` |
+| 5 | período mensal | `30` dias |
+| 6 | auditoria | 1 linha `MANUAL_PAYMENT_CONFIRMED` |
+| 7 | confirmar duas vezes | recusado (`payment_not_pending`) |
+| 8 | idempotência do período | período não dobra |
+| 9 | cliente confirma | negado |
+| 10 | cliente altera status | negado |
+| 11 | RPC admin para cliente | negada |
+| 12 | rejeitar | `REJECTED` |
+| 13 | motivo da rejeição | visível no detalhe |
+| 14 | rejeição não troca plano | `profissional` |
+| 15 | rejeição não muda status | `active` |
+
+### Outras verificações do banco
+
+- **Anual = 365 dias**: `admin_confirm_payment` devolveu `period_days = 365` e
+  `days_left = 365` no painel do cliente.
+- **Vinculo**: `payment_requests.subscription_id` preenchido na confirmação;
+  `subscriptions.payment_request_id`, `payment_method = MANUAL_PIX`,
+  `activated_by` e `activated_at` gravados.
+- **MASTER_ADMIN**: dono de restaurante chamando `admin_save_payment_settings`
+  recebe `master_admin_forbidden`; o período só é ajustável por `owner`.
+- **Comprovante**: caminho fora de `{restaurant_id}/receipts/` é recusado
+  (`invalid_receipt_path`); anexo não muda status.
+- **PIX desligado**: `request_plan_payment` recusa com `pix_not_configured`.
+- **Plano grátis**: recusa com `plan_is_free`.
+
+### Observação sobre o `my_payment_panel`
+
+A ordem do histórico passou a usar `created_at desc, id desc`. Dentro de **uma
+mesma transação** `now()` é fixo, então duas solicitações criadas no mesmo bloco
+empata no timestamp; o desempate por `id` torna o teste determinístico. Em uso
+real cada RPC tem transação própria, e o `id` nunca decide a ordem.
