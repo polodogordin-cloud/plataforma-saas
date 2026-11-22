@@ -418,8 +418,9 @@ Requer `npm ci` e, para os harnesses de UI/SSR, `npm install esbuild jsdom --no-
 | `payments-lib` / `payments-security` / `payments-ui` / `payments-ssr` | 61 / 59 / 66 / 29 |
 | `security-lib` / `diagnostics-lib` | 40 / 58 |
 | `error-states` / `tenant-audit` | 65 / 29 |
+| `onboarding-lib` / `onboarding-ssr` | 112 / 87 |
 
-Total: **2.217 asserções** contadas em 41 arquivos (os 42 arquivos da suíte
+Total: **2.416 asserções** contadas em 43 arquivos (os 44 arquivos da suíte
 menos `pwa-nav`), **todas passando** na execução de 2026-11-22. A única exceção
 continua anterior à Etapa 19: `pwa-nav` não chega a executar (falha de bundle) —
 ver a nota abaixo. `kitchen-ui` passou 59/59 nesta execução, mas a asserção de

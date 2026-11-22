@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { trackOnboardingStep } from "@/lib/onboarding-progress";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveRestaurant } from "@/lib/data/restaurants";
@@ -157,6 +158,10 @@ export async function saveWhatsappSettings(input: {
   revalidatePath(`/r/${restaurant.slug}`);
   revalidatePath("/app/configuracoes/whatsapp");
   revalidatePath("/app/configuracoes");
+
+  // Etapa 21: só marca a etapa do wizard quando existe número configurado —
+  // "salvei a tela em branco" não é WhatsApp conectado.
+  if (config.phone) void trackOnboardingStep("whatsapp");
 
   return {
     ok: true,

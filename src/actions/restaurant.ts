@@ -80,7 +80,10 @@ export async function createRestaurant(
 
   revalidatePath("/app");
   revalidatePath("/onboarding");
-  redirect("/app");
+
+  // Etapa 21: quem acabou de criar a casa cai direto no passo a passo — sem
+  // isso, o painel novo aparecia vazio e o dono não sabia o que fazer primeiro.
+  redirect("/app/onboarding");
 }
 
 /** Atualiza dados do restaurante (owner/admin — validado pela RLS). */

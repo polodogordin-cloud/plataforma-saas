@@ -11,8 +11,11 @@ export const metadata: Metadata = {
 
 export default async function OnboardingPage() {
   const restaurants = await listMyRestaurants();
-  // Já tem restaurante: não faz sentido refazer o onboarding.
-  if (restaurants.length > 0) redirect("/app");
+
+  // Já tem restaurante: não faz sentido recriar a casa. Mas "já tem restaurante"
+  // pode significar "criou e saiu no meio da configuração" — nesse caso o lugar
+  // certo é o passo a passo, não o painel. A Etapa 21 trocou este destino.
+  if (restaurants.length > 0) redirect("/app/onboarding");
 
   return (
     <main className="min-h-dvh bg-white">

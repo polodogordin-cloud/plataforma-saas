@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { trackOnboardingStep } from "@/lib/onboarding-progress";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveRestaurant } from "@/lib/data/restaurants";
@@ -133,6 +134,8 @@ export async function createCategory(
   }
 
   revalidateMenu();
+  // Etapa 21: criar categoria fora do wizard também fecha a etapa.
+  void trackOnboardingStep("categorias");
   return { ok: true, message: "Categoria criada." };
 }
 
@@ -297,6 +300,8 @@ export async function createProduct(
   }
 
   revalidateMenu();
+  // Etapa 21: idem para o primeiro produto cadastrado pelo caminho normal.
+  void trackOnboardingStep("produtos");
   return { ok: true, message: "Produto criado." };
 }
 

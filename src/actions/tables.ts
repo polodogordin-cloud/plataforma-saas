@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { trackOnboardingStep } from "@/lib/onboarding-progress";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveRestaurant } from "@/lib/data/restaurants";
 import { tableSchema, toUuidOrNull, type ActionState } from "@/lib/validation";
@@ -107,6 +108,9 @@ export async function createTable(
   }
 
   revalidateTables();
+  // Etapa 21: mesa nova com QR disponível fecha as etapas de mesas e QR.
+  void trackOnboardingStep("mesas");
+  void trackOnboardingStep("qrcode");
   return { ok: true, message: "Mesa criada." };
 }
 
