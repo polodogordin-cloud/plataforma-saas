@@ -364,6 +364,58 @@ check(
   billingLib.includes('rpc("change_plan"'),
 );
 
+/* ==== Etapa 19b: change_plan não vende plano ==== */
+// A tela não é a regra: quem chama o PostgREST direto passa por baixo dela.
+// Aqui a asserção é sobre a tradução do erro que o banco devolve e sobre o
+// texto da migration, que é onde a porta do dinheiro mora.
+
+const migration0019b = fs.readFileSync(
+  path.join(ROOT, "supabase/migrations/0020_change_plan_requires_payment.sql"),
+  "utf8",
+);
+const changePlanBody = migration0019b.slice(
+  migration0019b.indexOf("create or replace function public.change_plan"),
+  migration0019b.indexOf("revoke all on function public.change_plan"),
+);
+
+check(
+  "19b: change_plan recusa plano pago com payment_required",
+  changePlanBody.includes("raise exception 'payment_required'"),
+);
+
+check(
+  "19b: a recusa vale para quem não é admin da plataforma",
+  /if not v_is_admin[\s\S]{0,200}price_monthly > 0/.test(changePlanBody),
+  changePlanBody.slice(0, 120),
+);
+
+check(
+  "19b: trocar o intervalo do mesmo plano continua livre",
+  changePlanBody.includes("or v_current.plan_id <> p_plan_id"),
+);
+
+check(
+  "19b: admin da plataforma mantém o poder de ajuste",
+  changePlanBody.includes("v_is_admin boolean := public.is_platform_admin()"),
+);
+
+check(
+  "19b: a autorização e o anti-downgrade seguem intactos",
+  changePlanBody.includes("is_restaurant_owner_admin(p_restaurant_id)") &&
+    changePlanBody.includes("plan_downgrade_too_small"),
+);
+
+check(
+  "19b: o ajuste do master fica auditado como by_admin",
+  changePlanBody.includes("'by_admin', v_is_admin"),
+);
+
+check(
+  "19b: o erro vira instrução em português, não erro de banco",
+  billingLib.includes("payment_required") &&
+    billingLib.includes("depois do pagamento por PIX"),
+);
+
 /* ===================== relatório ===================== */
 
 const passed = results.filter((r) => r.ok).length;

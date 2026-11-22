@@ -380,10 +380,13 @@ async function testPlanSwitcher() {
     document.body.textContent.slice(0, 200),
   );
 
-  // Aviso do gateway antes de confirmar: ninguém deve achar que vai pagar.
+  // Aviso do gateway antes de confirmar: ninguém deve achar que o plano troca
+  // sozinho. Desde a Etapa 19 a cobrança é manual por PIX.
   check(
-    "troca: avisa que a cobrança automática não existe nesta etapa",
-    document.body.textContent.includes("cobrança automática"),
+    "troca: avisa que a cobrança é por PIX e a liberação é manual",
+    document.body.textContent.includes("cobrança é por PIX") &&
+      document.body.textContent.includes("liberação é manual"),
+    document.body.textContent.slice(0, 200),
   );
 
   await act(async () => click(optionButton("Escolher este plano") ?? null));

@@ -1533,6 +1533,11 @@ nesta etapa finge que existe.
 6. **Rejeitar** (`admin_reject_payment`) exige motivo, não toca na assinatura e
    aparece no histórico do cliente.
 
+Cada passo grava auditoria com rótulo próprio em `/admin/auditoria`
+(`AUDIT_ACTION_LABEL`): `payment.requested`, `payment.receipt_uploaded`,
+`MANUAL_PAYMENT_CONFIRMED`, `payment.rejected`, `payment.cancelled` e
+`payment.settings_updated`.
+
 ### Quem pode o quê
 
 | Ação | Restaurante (owner/admin) | Admin da plataforma | MASTER_ADMIN |
@@ -1596,11 +1601,12 @@ aparece depois do retorno da confirmação.
 
 ### Verificação
 
-- `0019_payments.sql` aplicada no Supabase; 20 asserções SQL em transação com
-  `rollback` (8 do escopo + master/tenant/preço/idempotência) — resultados em
-  `docs/AMBIENTES.md`.
+- `0019_payments.sql` aplicada no Supabase; asserções SQL em transação com
+  `rollback` (8 do escopo + master/tenant/preço/idempotência). A rodada final
+  fechou **15/15** — resultados em `docs/AMBIENTES.md`.
 - `payments-lib` (61), `payments-security` (59), `payments-ui` (66),
-  `payments-ssr` (29). Suíte total: **1.659 asserções em 30 harnesses**.
+  `payments-ssr` (29). Suíte total: **2.024 asserções passando em 38 arquivos de
+  harness** (duas exceções antigas: `pwa-nav`, `kitchen-ui`).
 - `tsc --noEmit` e `next build` verdes; `/admin/pagamentos`,
   `/admin/pagamentos/[id]`, `/admin/settings/payment`, `/app/pagamento` e
   `/dashboard/billing` no manifesto de rotas.
@@ -1614,6 +1620,33 @@ aparece depois do retorno da confirmação.
   reescrever tela.
 - **Comprovante é conferência humana.** Não há OCR nem verificação de
   comprovante — e o desenho é esse: quem confirma é gente.
+
+### Um furo fechado junto (migration 0020)
+
+A RPC `change_plan`, herdada da Etapa 11, inseria a assinatura já como `active`.
+Enquanto a contratação era livre isso era o comportamento desejado; a partir da
+Etapa 19 virou **caminho de um comando para ganhar o plano mais caro sem pagar**:
+
+```
+select public.change_plan('<minha casa>', 'premium', 'monthly');
+```
+
+A tela nova não chamava essa RPC, mas RPC acessível ao cliente é contrato — quem
+fala com o PostgREST direto não passa pela tela. A `0020` mantém `change_plan`
+para o que não envolve dinheiro e recusa o resto:
+
+| Chamada, sendo dono da casa | Antes | Agora |
+| --- | --- | --- |
+| migrar entre planos gratuitos | liberado | liberado |
+| trocar mensal ↔ anual no **mesmo** plano | liberado | liberado |
+| sair do grátis / subir para plano pago | **liberado** | `payment_required` |
+| entrar em plano pago sem assinatura | **liberado** | `payment_required` |
+| qualquer uma acima, sendo admin da plataforma | liberado | liberado (auditado com `by_admin`) |
+
+O app traduz o erro em instrução ("Plano pago é liberado depois do pagamento por
+PIX…"), e o único caminho para uma casa ficar `active` em plano pago passa a ser
+`admin_confirm_payment`, com `payment_request_id`, `payment_method` e
+`activated_by` gravados.
 
 ---
 

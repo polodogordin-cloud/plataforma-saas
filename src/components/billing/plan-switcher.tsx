@@ -95,7 +95,7 @@ export function PlanSwitcher({
         open={open}
         onClose={() => setOpen(false)}
         title="Trocar de plano"
-        description="A cobrança automática entra em uma próxima etapa. Por enquanto a troca é registrada e vale na hora."
+        description="A cobrança é por PIX e a liberação é manual: a troca só vale depois que confirmarmos o recebimento."
         size="tall"
       >
         <ul className="space-y-3">
