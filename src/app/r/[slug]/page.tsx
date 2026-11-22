@@ -11,6 +11,7 @@ import {
   getPublicRestaurantState,
   listPublishedSlugs,
 } from "@/lib/data/public-menu";
+import { jsonForScript } from "@/lib/safe-html";
 import { getPublicRestaurantTheme } from "@/lib/data/theme";
 import { getPublicWhatsappConfig } from "@/lib/data/whatsapp";
 import { WhatsappButton } from "@/components/public/whatsapp-button";
@@ -189,7 +190,11 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
         type="application/ld+json"
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
+          // Etapa 20: `JSON.stringify` não escapa `<`, e `</script>` no nome do
+          // restaurante encerraria o bloco — XSS armazenado servido pela nossa
+          // origem. `jsonForScript` troca `<`/`>`/`&` por escapes Unicode, que
+          // leem o mesmo dado e não fecham o elemento.
+          __html: jsonForScript({
             "@context": "https://schema.org",
             "@type": "Restaurant",
             name: restaurant.name,
@@ -222,9 +227,7 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
                 })),
               })),
             },
-          })
-            .replace(/</g, "\\u003c")
-            .replace(/>/g, "\\u003e"),
+          }),
         }}
       />
 

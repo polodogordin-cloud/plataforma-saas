@@ -93,6 +93,11 @@ const AVISOS: Record<string, string> = {
     "Sua conta não tem acesso ao painel da cozinha. Peça ao administrador do restaurante para ajustar seu perfil.",
   "casa-suspensa":
     "O restaurante está suspenso. Fale com o suporte da plataforma para reativar.",
+  // Etapa 20: o layout de `/admin` redireciona para cá quando a conta não tem
+  // papel de plataforma. Antes o aviso não existia na lista e a pessoa caía no
+  // painel sem entender por que não abriu a área administrativa.
+  "sem-acesso-admin":
+    "Sua conta não tem acesso à área administrativa da plataforma. Se você precisa dela, fale com quem administra a plataforma.",
 };
 
 export default async function DashboardPage({

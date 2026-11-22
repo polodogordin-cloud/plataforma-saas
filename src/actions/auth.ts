@@ -5,7 +5,12 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { RATE_LIMITS, checkRateLimit, clientKey } from "@/lib/rate-limit";
-import { safeRedirectPath } from "@/lib/env";
+import {
+  extraTrustedHosts,
+  resolveAppEnv,
+  resolveSiteOrigin,
+  safeRedirectPath,
+} from "@/lib/env";
 import {
   signInSchema,
   signUpSchema,
@@ -29,21 +34,30 @@ function fieldErrorsFrom(error: unknown): ActionState["fieldErrors"] | undefined
 /**
  * Origem para os links de e-mail (confirmação e recuperação).
  *
- * `headers()` é a fonte preferida em vez de `NEXT_PUBLIC_SITE_URL`: o link
- * precisa apontar para o host que o usuário está usando — inclusive num
- * preview de PR, onde o domínio é outro. A variável entra como fallback.
+ * ─── Por que não confiar no header `Origin` (corrigido na Etapa 20) ────────
+ *
+ * A versão anterior preferia `headers().get("origin")` antes de olhar o host.
+ * Header é entrada do cliente: quem faz `POST` fora do navegador escolhe o
+ * valor. Numa action de **cadastro** (que é pública, por definição), isso
+ * significa escolher em que domínio o link de confirmação de e-mail vai
+ * apontar — e o Supabase só envia o e-mail se o endereço estiver na allowlist,
+ * mas num `site_url` permissivo o resultado é e-mail legítimo nosso com link
+ * para o domínio do atacante (phishing com nossa reputação de remetente).
+ *
+ * A ordem agora é: variável configurada (a verdade do deploy) → host que passou
+ * por `resolveSiteOrigin` (que valida contra a allowlist de hosts da
+ * plataforma) → `null`. Sem origem confiável, o link aponta para o próprio
+ * site do Supabase Auth, que é o comportamento seguro.
  */
-async function siteOrigin() {
+async function siteOrigin(): Promise<string | null> {
   const headerList = await headers();
-  const configured = process.env.NEXT_PUBLIC_SITE_URL;
-  if (configured && !configured.includes("localhost")) {
-    return configured.replace(/\/$/, "");
-  }
-  const origin = headerList.get("origin");
-  if (origin) return origin;
-  const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
-  const proto = headerList.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
+  return resolveSiteOrigin({
+    configured: process.env.NEXT_PUBLIC_SITE_URL,
+    requestHost: headerList.get("x-forwarded-host") ?? headerList.get("host"),
+    requestProto: headerList.get("x-forwarded-proto"),
+    env: resolveAppEnv(),
+    trustedHosts: extraTrustedHosts(),
+  });
 }
 
 /**
@@ -132,7 +146,9 @@ export async function signUp(
     password: parsed.data.password,
     options: {
       data: { full_name: parsed.data.fullName },
-      emailRedirectTo: `${origin}/auth/callback?next=/onboarding`,
+      // Sem origem confiável, o Supabase usa o `site_url` do projeto — o
+      // fallback seguro. Nunca montar `null/auth/callback`.
+      emailRedirectTo: origin ? `${origin}/auth/callback?next=/onboarding` : undefined,
     },
   });
 
@@ -178,7 +194,7 @@ export async function requestPasswordReset(
   const origin = await siteOrigin();
 
   await supabase.auth.resetPasswordForEmail(parsed.data, {
-    redirectTo: `${origin}/auth/callback?next=/redefinir-senha`,
+    redirectTo: origin ? `${origin}/auth/callback?next=/redefinir-senha` : undefined,
   });
 
   // Resposta neutra: não revela se o e-mail existe (boa prática de segurança).
