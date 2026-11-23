@@ -363,6 +363,23 @@ export const couponApplyInputSchema = z.object({
  * Tipos numéricos chegam como número (a action converte de string com
  * `parseCouponForm`); aqui a validação é a última barreira antes da RPC.
  */
+/**
+ * Preferências de notificação — Etapa 26.
+ *
+ * O array só é conferido no formato; **quais** tipos existem é o banco que
+ * decide (contra o enum `notification_type`). Duplicar a lista aqui criaria
+ * duas verdades: a tela aceitaria um tipo que o banco recusa, ou o contrário.
+ */
+export const saveNotificationPreferencesSchema = z.object({
+  restaurantId: z.string().uuid("Restaurante inválido."),
+  disabled: z
+    .array(z.string().trim().min(1).max(60))
+    // Teto = número de tipos do enum. Truncar em silêncio esconderia um bug de
+    // formulário; recusar é melhor.
+    .max(50, "Lista de preferências inválida.")
+    .default([]),
+});
+
 export const couponInputSchema = z.object({
   id: z.string().uuid().nullable().optional().default(null),
   name: z

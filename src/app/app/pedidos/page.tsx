@@ -25,13 +25,24 @@ type TabId = (typeof TAB_IDS)[number];
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; pedido?: string; aba?: string }>;
 }) {
   const restaurant = await getActiveRestaurant();
   if (!restaurant) redirect("/onboarding");
 
-  const { tab } = await searchParams;
+  const { tab, pedido, aba } = await searchParams;
   const initialTab = TAB_IDS.includes(tab as TabId) ? (tab as TabId) : null;
+
+  /*
+   * Etapa 26 — atalhos vindos do sino.
+   *
+   * `?pedido=<uuid>` abre o detalhe daquele pedido; `?aba=salao` rola até a
+   * fila de chamadas. São só dicas de navegação: o id é repassado ao painel,
+   * que só encontra o pedido se ele estiver entre os que o usuário pode ler.
+   * Um uuid forjado não vaza nada — a lista já é filtrada por RLS.
+   */
+  const focusOrderId = /^[0-9a-f-]{36}$/i.test(pedido ?? "") ? pedido! : null;
+  const focusRequests = aba === "salao";
 
   const [counts, timeZone, printConfig] = await Promise.all([
     getOrderBoardCounts(restaurant.id),
@@ -73,6 +84,8 @@ export default async function OrdersPage({
           initialPending={counts.pending}
           initialTab={initialTab}
           autoPrint={autoPrint}
+          focusOrderId={focusOrderId}
+          focusRequests={focusRequests}
         />
       </main>
     </>

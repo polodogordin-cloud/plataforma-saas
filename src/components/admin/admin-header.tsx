@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import { ChevronLeft, ShieldCheck } from "lucide-react";
+import { NotificationBellSlot } from "@/components/notifications/bell-slot";
 
 /**
  * Cabeçalho do painel master.
@@ -7,6 +10,11 @@ import { ChevronLeft, ShieldCheck } from "lucide-react";
  * Fundo escuro é intencional: é o sinal visual permanente de "você está na
  * plataforma, não no seu restaurante". O crachá "Plataforma" reforça isso em
  * texto, porque cor sozinha não é acessível.
+ *
+ * Etapa 26: o sino entra aqui também, via `NotificationBellSlot` — que no
+ * `/admin` mostra as notificações **globais** (pagamento de plano na fila). O
+ * provider do layout master passa `userId` sem restaurante; a RLS e a RPC de
+ * contagem só devolvem linha global para quem é admin da plataforma.
  */
 export function AdminHeader({
   title,
@@ -44,6 +52,8 @@ export function AdminHeader({
           <h1 className="truncate text-[1.02rem] font-semibold leading-tight">{title}</h1>
           {subtitle && <p className="truncate text-xs text-ink-400">{subtitle}</p>}
         </div>
+
+        <NotificationBellSlot />
       </div>
     </header>
   );
