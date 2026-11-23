@@ -1,5 +1,13 @@
 import { z } from "zod";
 import { ORDER_NOTES_MAX } from "@/lib/cart";
+import {
+  COUPON_CODE_MAX,
+  COUPON_CODE_MIN,
+  COUPON_DESCRIPTION_MAX,
+  COUPON_MAX_USES_PER_CUSTOMER,
+  COUPON_NAME_MAX,
+  COUPON_VALUE_MAX,
+} from "@/lib/coupons";
 
 /** Validações compartilhadas entre formulários e Server Actions. */
 
@@ -300,6 +308,82 @@ export const orderInputSchema = z.object({
     .optional()
     .default(""),
   consent: z.boolean().optional().default(false),
+  /*
+   * Cupom — Etapa 25.
+   *
+   * Só o CÓDIGO atravessa a fronteira. Valor, teto e total continuam vindo do
+   * banco: não existe campo para o cliente mandar desconto, e o schema
+   * descartaria se existisse. O código é saneado aqui (maiúsculo, sem espaço)
+   * porque comparar "bem vindo10" com "BEMVINDO10" é responsabilidade das duas
+   * pontas, não só do banco.
+   */
+  couponCode: z
+    .string()
+    .trim()
+    .max(COUPON_CODE_MAX, "Código de cupom longo demais.")
+    .optional()
+    .default(""),
 });
 
 export type OrderInput = z.infer<typeof orderInputSchema>;
+
+/* ==========================================================================
+   Etapa 25 · Cupons (painel)
+   ========================================================================== */
+
+/**
+ * Entrada de `validate_coupon` a partir do carrinho.
+ *
+ * `subtotal` é enviado para o cupom de valor mínimo poder responder antes do
+ * envio. Ele **não** é usado para calcular o desconto final: no envio, o
+ * servidor recalcula o subtotal com os preços do banco e chama a mesma função
+ * de novo. Um subtotal mentiroso aqui só engana a prévia do próprio cliente.
+ */
+export const couponApplyInputSchema = z.object({
+  tableToken: z
+    .string()
+    .trim()
+    .regex(/^[2-9A-HJKMNP-Z]{10,64}$/i, "Mesa não identificada."),
+  code: z
+    .string()
+    .trim()
+    .min(1, "Digite o código do cupom.")
+    .max(COUPON_CODE_MAX, "Código de cupom longo demais."),
+  subtotal: z
+    .number()
+    .finite()
+    .min(0, "Subtotal inválido.")
+    .max(1_000_000, "Subtotal inválido."),
+  customerPhone: z.string().trim().max(40).optional().default(""),
+});
+
+/**
+ * Formulário de cupom do painel.
+ *
+ * Tipos numéricos chegam como número (a action converte de string com
+ * `parseCouponForm`); aqui a validação é a última barreira antes da RPC.
+ */
+export const couponInputSchema = z.object({
+  id: z.string().uuid().nullable().optional().default(null),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Dê um nome ao cupom.")
+    .max(COUPON_NAME_MAX, `O nome pode ter no máximo ${COUPON_NAME_MAX} caracteres.`),
+  code: z
+    .string()
+    .trim()
+    .min(COUPON_CODE_MIN, "Código curto demais.")
+    .max(COUPON_CODE_MAX, "Código longo demais.")
+    .regex(/^[A-Z0-9]+$/, "Use apenas letras e números."),
+  description: z.string().trim().max(COUPON_DESCRIPTION_MAX).optional().default(""),
+  discountType: z.enum(["percentage", "fixed", "free_shipping"]),
+  discountValue: z.number().finite().min(0).max(COUPON_VALUE_MAX),
+  minOrderValue: z.number().finite().min(0).max(COUPON_VALUE_MAX),
+  maxDiscount: z.number().finite().min(0).max(COUPON_VALUE_MAX).nullable().optional().default(null),
+  startsAt: z.string().datetime().nullable().optional().default(null),
+  endsAt: z.string().datetime().nullable().optional().default(null),
+  maxUses: z.number().int().min(1).max(1_000_000).nullable().optional().default(null),
+  maxUsesPerCustomer: z.number().int().min(1).max(COUPON_MAX_USES_PER_CUSTOMER),
+  active: z.boolean(),
+});

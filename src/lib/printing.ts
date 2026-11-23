@@ -285,7 +285,16 @@ export function buildTicketLines(
   /* Total. Subtotal, taxas e desconto só quando existem — cupom curto. */
   if (showPrices) {
     if (doc.order.fees > 0) lines.push(justify("Taxa", money(doc.order.fees), cols));
-    if (doc.order.discount > 0) lines.push(justify("Desconto", `-${money(doc.order.discount)}`, cols));
+    // Etapa 25: o cupom aparece na via impressa junto do desconto — é a
+    // pergunta do cliente no balcão ("usei o cupom, saiu certo?").
+    if (doc.order.discount > 0)
+      lines.push(
+        justify(
+          doc.order.coupon_code ? `Desconto ${doc.order.coupon_code}` : "Desconto",
+          `-${money(doc.order.discount)}`,
+          cols,
+        ),
+      );
     lines.push(justify("TOTAL", money(doc.order.total), cols));
   }
 

@@ -132,6 +132,30 @@ export function OrderSuccess({
           ))}
         </ul>
 
+        {/*
+          Etapa 25: desconto visível antes do total.
+
+          O valor vem do pedido que o BANCO devolveu — não da prévia do
+          carrinho. Se o cupom não valeu no envio, esta tela não mostra
+          desconto nenhum, porque `discount` é zero.
+        */}
+        {current.discount > 0 && (
+          <dl className="mt-3 space-y-1 px-4 text-sm">
+            <div className="flex items-baseline justify-between">
+              <dt className="text-[var(--mv-text-muted)]">Subtotal</dt>
+              <dd className="tabular-nums text-[var(--mv-text)]">{formatPrice(current.subtotal)}</dd>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <dt className="text-[var(--mv-text-muted)]">
+                Desconto{current.coupon_code ? ` (${current.coupon_code})` : ""}
+              </dt>
+              <dd className="font-medium tabular-nums text-[var(--mv-primary)]">
+                − {formatPrice(current.discount)}
+              </dd>
+            </div>
+          </dl>
+        )}
+
         <div
           className="mt-3 flex items-baseline justify-between rounded-2xl px-4 py-3"
           style={{ backgroundColor: tokens.button, color: tokens.buttonText }}

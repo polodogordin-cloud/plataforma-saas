@@ -387,6 +387,8 @@ export type TableOrder = {
   fees: number;
   discount: number;
   total: number;
+  /** Etapa 25: código do cupom aplicado, congelado no pedido. */
+  coupon_code: string | null;
   notes: string | null;
   created_at: string;
   items: OrderItem[];
@@ -399,7 +401,10 @@ export type CreatedOrder = {
   table_name: string;
   restaurant_id: string;
   subtotal: number;
+  /** Etapa 25: desconto efetivamente aplicado (0 quando não houve cupom). */
+  discount: number;
   total: number;
+  coupon_code: string | null;
   status: OrderStatus;
   created_at: string;
 };
@@ -427,6 +432,8 @@ export type PanelOrder = {
   fees: number;
   discount: number;
   total: number;
+  /** Etapa 25: cupom usado neste pedido (snapshot, não join). */
+  coupon_code: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -1669,6 +1676,8 @@ export type PrintOrderDocument = {
     subtotal: number;
     fees: number;
     discount: number;
+    /** Etapa 25: cupom usado, para a via impressa explicar o desconto. */
+    coupon_code: string | null;
     total: number;
     notes: string | null;
     created_at: string;
@@ -1920,3 +1929,22 @@ export type CustomerPoints = {
   points_per_currency: number;
   redeem_value: number;
 };
+
+/* ==========================================================================
+   Etapa 25 · Cupons e promoções
+   ========================================================================== */
+
+/*
+ * Os tipos de cupom vivem em `@/lib/coupons` (o módulo puro, que roda no
+ * cardápio público também). Aqui ficam apenas os reexports para quem importa
+ * `@/lib/types` por hábito — sem duplicar a definição.
+ */
+export type {
+  Coupon,
+  CouponDetail,
+  CouponForm,
+  CouponRedemption,
+  CouponStatus,
+  CouponValidation,
+  CouponDiscountType,
+} from "@/lib/coupons";

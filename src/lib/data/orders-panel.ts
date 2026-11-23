@@ -34,6 +34,8 @@ function normalizeOrder(row: Record<string, unknown>): PanelOrder {
     fees: toNumber(row.fees),
     discount: toNumber(row.discount),
     total: toNumber(row.total),
+    // Etapa 25: snapshot do cupom no próprio pedido (sem join com `coupons`).
+    coupon_code: (row.coupon_code as string | null) ?? null,
     notes: (row.notes as string | null) ?? null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
