@@ -132,8 +132,11 @@ destaque, a chamada, o endereço numa pílula e a logo quando existe.
 - **Emoji é removido** do texto da arte: medido, o PNG saía com uma caixa vazia
   no lugar do 🍽️ porque o contêiner da Vercel não tem fonte de emoji. Na mensagem
   do WhatsApp o emoji continua (lá quem desenha é o aparelho do cliente).
+- Usa a **chamada editada** (`settings.share_headline`), a mesma da descrição da
+  página: arte com texto padrão ao lado de descrição personalizada parece bug.
 - Cache de 1 hora; o número é literal no `revalidate` (o Next recusa constante
   importada) e o harness garante que ele não divergiu de `SHARE_CARD_CACHE_SECONDS`.
+- `sharp` é **dependência direta** do projeto (ver §9).
 - Herdada por `/r/[slug]/table/[token]` — o link da mesa também tem prévia.
 
 ### Página da mesa — `/r/{slug}/table/{token}`
@@ -189,7 +192,18 @@ devolve `42501 share_forbidden`, espaços são colapsados na gravação.
 
 ---
 
-## 9. Limitações conhecidas
+## 9. `sharp` como dependência direta
+
+Até a Etapa 22 o `sharp` existia apenas como dependência transitiva do `next`.
+Em produção, `/r/{slug}/opengraph-image` respondia **500** com o mesmo código que
+rodava local: o rastreamento de arquivos da Vercel não embarcou o binário nativo
+nas funções que o importam dinamicamente. Declarar `sharp` em `dependencies`
+resolve — o build passa a copiar o pacote para a função. O harness
+`share-security` guarda essa declaração para a regressão não voltar.
+
+---
+
+## 10. Limitações conhecidas
 
 - **Sem publicação automática** em rede social (ver §3).
 - O **Google** abre a busca pelo nome; não existe "pré-visualizar o card no

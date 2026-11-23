@@ -79,18 +79,23 @@ export default async function OpengraphImage({ params }: { params: Promise<{ slu
 }
 
 /**
- * A chamada não sai da view pública (ela não expõe `share_headline`, e não deve:
- * a view é o contrato do cardápio, não do marketing). Então a imagem usa a
- * chamada **padrão**.
+ * A chamada editada **é** usada aqui — ela mora em `settings.share_headline`.
  *
- * Foi uma decisão, não um esquecimento: acrescentar a coluna em
- * `public_restaurants` faria toda leitura do cardápio carregar texto de
- * divulgação, e uma mudança de chamada invalidaria o ISR do cardápio inteiro.
- * O título e a descrição da página já carregam o texto editado — a imagem fica
- * com a chamada fixa da plataforma.
+ * `settings` já vem na view pública desde a Etapa 1 (é o que carrega horário e
+ * tema), então ler a chamada dali não custa consulta nova nem muda o contrato de
+ * `public_restaurants`. Foi o caminho escolhido na Etapa 23 justamente para a
+ * arte e a descrição da página dizerem a mesma coisa: uma imagem com texto
+ * padrão ao lado de uma descrição personalizada parece bug para o dono.
+ *
+ * Defensivo porque `settings` é `jsonb` livre: valor que não seja string, ou
+ * longo demais, é ignorado em vez de irromper no SVG.
  */
-function headlineFromSettings(_settings: unknown): string | null {
-  return null;
+function headlineFromSettings(settings: unknown): string | null {
+  if (!settings || typeof settings !== "object") return null;
+  const value = (settings as Record<string, unknown>).share_headline;
+  if (typeof value !== "string") return null;
+  const clean = value.replace(/\s+/g, " ").trim();
+  return clean ? clean.slice(0, 160) : null;
 }
 
 /** Baixa a logo do bucket público do tenant, com limite de tipo e tamanho. */
