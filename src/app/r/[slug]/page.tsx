@@ -101,6 +101,28 @@ export async function generateMetadata({
    */
   const path = `/r/${restaurant.slug}`;
 
+  /*
+   * ─── Imagem de compartilhamento (Etapa 23) ───────────────────────────────
+   *
+   * A logo funciona como avatar, mas num card de WhatsApp ela é recortada em
+   * quadrado e sobra pouco: o que aparece é uma marca pequena ao lado de três
+   * linhas de texto. O `opengraph-image.tsx` desta rota gera a **arte 1200×630**
+   * com o nome do restaurante em destaque e o endereço na base — é o que
+   * transforma o link colado num card que as pessoas clicam.
+   *
+   * Declaramos a URL explicitamente (em vez de confiar na convenção de arquivo)
+   * porque assim ela também é usada pelo `twitter:image`, e porque a arte é
+   * servida pela nossa origem: a prévia não depende de o mensageiro conseguir
+   * buscar uma imagem do bucket do Supabase (alguns buscam, o WhatsApp costuma
+   * ignorar imagens de terceiros com cache curto).
+   */
+  const shareImage = {
+    url: `${path}/opengraph-image`,
+    width: 1200,
+    height: 630,
+    alt: `Cardápio digital de ${restaurant.name}`,
+  };
+
   return {
     metadataBase: metadataBaseUrl(),
     title,
@@ -113,15 +135,14 @@ export async function generateMetadata({
       title,
       description,
       url: path,
-      images: restaurant.logo_url
-        ? [{ url: restaurant.logo_url, alt: `Logo de ${restaurant.name}` }]
-        : undefined,
+      images: [shareImage],
     },
     twitter: {
-      card: restaurant.logo_url ? "summary_large_image" : "summary",
+      // `summary_large_image` sempre: a arte é 16:9 e é ela que carrega o nome.
+      card: "summary_large_image",
       title,
       description,
-      images: restaurant.logo_url ? [restaurant.logo_url] : undefined,
+      images: [shareImage.url],
     },
     // Sem `robots` aqui: o cardápio publicado deve ser indexado (é o que traz
     // cliente novo pelo Google). Quem some do índice é o 404 e a página de
@@ -142,8 +163,21 @@ function buildDescription(restaurant: {
   description?: string | null;
   city?: string | null;
   state?: string | null;
+  settings?: unknown;
 }): string {
+  /*
+   * Etapa 23: a chamada que o dono edita em "Divulgar meu cardápio" entra aqui
+   * primeiro. É o texto que ele escolheu para vender — usar a `description` do
+   * restaurante (que é sobre o tipo de comida) quando ele escreveu uma chamada
+   * seria ignorar a decisão dele.
+   *
+   * Vem de `settings.share_headline`, e não de uma coluna lida na view pública:
+   * `settings` já viaja no cabeçalho do cardápio desde a Etapa 1, então não há
+   * consulta nova nem mudança na view.
+   */
+  const headline = readShareHeadline(restaurant.settings);
   const base =
+    headline?.trim() ||
     restaurant.description?.trim() ||
     `Veja o cardápio de ${restaurant.name} e escolha o que pedir.`;
 
@@ -153,6 +187,21 @@ function buildDescription(restaurant: {
   // Meta description acima de ~160 caracteres é cortada no resultado de busca.
   const composed = `${base}${suffix}`;
   return composed.length > 160 ? `${composed.slice(0, 157).trimEnd()}…` : composed;
+}
+
+/**
+ * Lê a chamada de divulgação de `settings`.
+ *
+ * Defensivo por necessidade: `settings` é `jsonb` livre, escrito por três
+ * versões diferentes do app. Um valor que não seja string, ou que seja longo
+ * demais, é ignorado em vez de irromper no `<meta>`.
+ */
+function readShareHeadline(settings: unknown): string | null {
+  if (!settings || typeof settings !== "object") return null;
+  const value = (settings as Record<string, unknown>).share_headline;
+  if (typeof value !== "string") return null;
+  const clean = value.replace(/\s+/g, " ").trim();
+  return clean ? clean.slice(0, 160) : null;
 }
 
 

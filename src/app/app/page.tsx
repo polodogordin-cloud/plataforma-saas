@@ -9,6 +9,7 @@ import {
   ExternalLink,
   ClipboardList,
   LayoutGrid,
+  Megaphone,
   Package,
   Palette,
   ShieldCheck,
@@ -236,6 +237,28 @@ export default async function DashboardPage({
 
         {/* Cardápio público: o que o cliente vê e como compartilhar */}
         <PublicLink slug={restaurant.slug} status={restaurant.status} />
+
+        {/*
+          Etapa 23: entrada da tela de divulgação. Fica logo abaixo do link
+          público porque é a continuação natural dele — quem acabou de ver o
+          endereço vai querer mandar para alguém. Compartilhar não é ato
+          administrativo, então o atalho aparece para qualquer membro da casa.
+        */}
+        <Link
+          href="/app/divulgar"
+          className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-soft)] transition hover:bg-ink-50 active:scale-[0.995]"
+        >
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
+            <Megaphone className="size-5" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-ink-900">Divulgar meu cardápio</span>
+            <span className="block text-xs leading-snug text-ink-500">
+              Link, QR Code geral, mensagem para WhatsApp e redes sociais — direto do celular.
+            </span>
+          </span>
+          <ArrowRight className="size-5 shrink-0 text-ink-400" aria-hidden="true" />
+        </Link>
 
         {/* Etapa 19: cobrança. Fica acima dos números porque plano vencido
             significa que o painel pode parar de funcionar. */}

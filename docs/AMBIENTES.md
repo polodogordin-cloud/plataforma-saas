@@ -420,9 +420,12 @@ Requer `npm ci` e, para os harnesses de UI/SSR, `npm install esbuild jsdom --no-
 | `error-states` / `tenant-audit` | 65 / 29 |
 | `onboarding-lib` / `onboarding-ssr` | 112 / 87 |
 | `qr-place-lib` / `qr-place-security` / `qr-place-ssr` | 117 / 71 / 63 |
+| `share-lib` / `share-security` / `share-ssr` | 108 / 96 / 51 |
 
-Total: **2.667 asserções** contadas em 46 arquivos (os 47 arquivos da suíte
-menos `pwa-nav`), **todas passando** na execução de 2026-11-22. A única exceção
+Total: **2.922 asserções** em 50 arquivos. Na execução de 2026-11-23: **2.863
+passaram em 48 arquivos**. Fora da conta estão as duas falhas conhecidas e
+anteriores a esta etapa — `pwa-nav` (não executa) e `kitchen-ui` (1 asserção
+dependente do horário, 58/59) — descritas na nota abaixo. A única exceção
 continua anterior à Etapa 19: `pwa-nav` não chega a executar (falha de bundle) —
 ver a nota abaixo. `kitchen-ui` passou 59/59 nesta execução, mas a asserção de
 tempo continua dependente de horário (também ver a nota).
@@ -584,3 +587,32 @@ hora de desenhar (ver `docs/QR-CODES.md` §6).
 
 **Harnesses:** `qr-place-lib.cjs` (117), `qr-place-security.cjs` (71),
 `qr-place-ssr.cjs` (63).
+
+## Migration 0024 — divulgação do cardápio (Etapa 23) — verificação no banco
+
+Aplicada em `fjrvjnhnvjkpowxzxiez` e registrada como
+`20261123100000 stage23_share`.
+
+| # | Teste | Esperado → obtido |
+| --- | --- | --- |
+| 1 | `share_overview` da própria casa | ✅ objeto com `restaurant`, `tables`, `orders` |
+| 2 | `share_overview` de restaurante alheio | ✅ `null` |
+| 3 | `save_share_headline` em tenant alheio | ✅ `share_forbidden` (42501) |
+| 4 | `save_share_headline` com 200 caracteres | ✅ `share_headline_too_long` (22023) |
+| 5 | `save_share_headline` com `"  Peça   sem\nfila  "` | ✅ grava `"Peça sem fila"` |
+| 6 | `save_share_headline` com `"   "` | ✅ grava `null` (volta ao padrão) |
+| 7 | `anon` executa `share_overview` | ✅ `false` (revogado) |
+| 8 | `anon` executa `save_share_headline` | ✅ `false` (revogado) |
+
+> Rodadas com `set local role authenticated` + `request.jwt.claims` do dono do
+> Pancadão, em `begin … rollback`.
+
+**Coluna nova:** `restaurants.share_headline text`, com `check`
+(`restaurants_share_headline_length`) de 160 caracteres.
+
+**Open Graph:** a arte 1200×630 é servida por `/r/{slug}/opengraph-image`; o
+`revalidate` é literal (3600) porque o Next recusa constante importada — o
+harness `share-lib` confere que ele continua igual a `SHARE_CARD_CACHE_SECONDS`.
+
+**Harnesses:** `share-lib.cjs` (108), `share-security.cjs` (96),
+`share-ssr.cjs` (51).
