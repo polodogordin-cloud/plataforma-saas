@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { orderInputSchema } from "@/lib/validation";
 import { cleanName, isValidPhone, normalizePhone } from "@/lib/loyalty";
+import { couponReasonMessage, normalizeCouponCode } from "@/lib/coupons";
 import type { CreatedOrder, TableOrder } from "@/lib/types";
 
 /**
@@ -44,12 +45,33 @@ const ERROR_MESSAGES: Record<string, string> = {
   customer_name_too_long: "O nome ficou longo demais.",
   consent_required:
     "Para registrar seus pontos, marque a autorização de uso do seu nome e WhatsApp.",
+  /*
+   * Etapa 25 — o cupom foi aceito na prévia e recusado no envio.
+   *
+   * Acontece de verdade: o cupom esgotou entre abrir o carrinho e enviar, ou o
+   * pedido ficou abaixo do mínimo porque um item saiu do cardápio. O pedido é
+   * recusado de propósito (não silenciosamente cobrado sem o desconto), e a
+   * frase diz que o carrinho continua lá.
+   */
+  coupon_not_applicable:
+    "O cupom não vale mais para este pedido (pode ter esgotado ou o valor mínimo mudou). Remova o cupom e envie de novo.",
 };
 
-function translate(message: string | undefined, code: string | undefined): string {
+function translate(message: string | undefined, code: string | undefined, details?: string): string {
   if (message) {
     for (const [key, text] of Object.entries(ERROR_MESSAGES)) {
       if (message.includes(key)) return text;
+    }
+  }
+  /*
+   * O cupom recusado manda o motivo real em `details` (coupon_expired,
+   * customer_limit_reached...). Traduzir o motivo dá uma frase melhor que a
+   * genérica, e a genérica continua sendo o fallback.
+   */
+  if (details) {
+    const specific = couponReasonMessage(details);
+    if (specific !== "Não foi possível aplicar o cupom.") {
+      return `${specific} Remova o cupom e envie de novo.`;
     }
   }
   if (code === "23505") return "Esse pedido já foi registrado. Aguarde um instante.";
@@ -101,6 +123,15 @@ export async function createOrder(input: unknown): Promise<CreateOrderResult> {
   const customerName = wantsIdentification ? cleanName(parsed.data.customerName) : null;
   const customerPhone = wantsIdentification ? normalizePhone(parsed.data.customerPhone) : null;
 
+  /*
+   * Cupom — Etapa 25.
+   *
+   * Só o código vai: o desconto é calculado em `create_order` com o subtotal
+   * recalculado no banco. Normalizar aqui é conveniência (a pessoa pode ter
+   * deixado um espaço); o banco normaliza de novo antes de comparar.
+   */
+  const couponCode = parsed.data.couponCode ? normalizeCouponCode(parsed.data.couponCode) : null;
+
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("create_order", {
     p_token: tableToken,
@@ -110,10 +141,11 @@ export async function createOrder(input: unknown): Promise<CreateOrderResult> {
     p_customer_name: customerName,
     p_customer_phone: customerPhone,
     p_consent: wantsIdentification,
+    p_coupon_code: couponCode,
   });
 
   if (error) {
-    return { ok: false, error: translate(error.message, error.code) };
+    return { ok: false, error: translate(error.message, error.code, error.details) };
   }
 
   const row = (Array.isArray(data) ? data[0] : data) as CreatedOrder | undefined;
@@ -128,6 +160,7 @@ export async function createOrder(input: unknown): Promise<CreateOrderResult> {
     order: {
       ...row,
       subtotal: Number(row.subtotal),
+      discount: Number(row.discount ?? 0),
       total: Number(row.total),
     },
   };

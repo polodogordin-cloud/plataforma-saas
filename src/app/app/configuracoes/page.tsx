@@ -13,7 +13,9 @@ import {
   Printer,
   ShieldCheck,
   Store,
+  TicketPercent,
   UserRound,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { AppHeader } from "@/components/app/app-header";
@@ -65,6 +67,26 @@ const groups: { title: string; items: Item[] }[] = [
         label: "Impressão",
         description: "Papel térmico, perfis, impressoras e teste",
         icon: Printer,
+      },
+    ],
+  },
+  {
+    // Etapa 25. "Marketing" é o nome que o dono procura para promoção — e não
+    // é configuração: é ferramenta de venda, então fica em grupo próprio, no
+    // topo, acima da conta.
+    title: "Marketing",
+    items: [
+      {
+        href: "/app/marketing/cupons",
+        label: "Cupons",
+        description: "Códigos de desconto, validade e limite de uso",
+        icon: TicketPercent,
+      },
+      {
+        href: "/app/clientes",
+        label: "Clientes e fidelidade",
+        description: "Quem voltou, quanto gastou e pontos",
+        icon: Users,
       },
     ],
   },

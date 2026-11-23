@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Plus,
   Store,
+  TicketPercent,
   UtensilsCrossed,
   Users,
   ChartNoAxesColumn,
@@ -256,6 +257,24 @@ export default async function DashboardPage({
             <span className="block text-sm font-semibold text-ink-900">Divulgar meu cardápio</span>
             <span className="block text-xs leading-snug text-ink-500">
               Link, QR Code geral, mensagem para WhatsApp e redes sociais — direto do celular.
+            </span>
+          </span>
+          <ArrowRight className="size-5 shrink-0 text-ink-400" aria-hidden="true" />
+        </Link>
+
+        {/* Etapa 25: cupons. Fica ao lado de clientes porque as duas são
+            "gente e venda" — e porque quem abre uma costuma abrir a outra. */}
+        <Link
+          href="/app/marketing/cupons"
+          className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-soft)] transition hover:bg-ink-50 active:scale-[0.995]"
+        >
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
+            <TicketPercent className="size-5" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-ink-900">Cupons e promoções</span>
+            <span className="block text-xs leading-snug text-ink-500">
+              Códigos de desconto com validade e limite — validados no servidor.
             </span>
           </span>
           <ArrowRight className="size-5 shrink-0 text-ink-400" aria-hidden="true" />

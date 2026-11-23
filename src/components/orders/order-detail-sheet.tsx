@@ -257,9 +257,13 @@ export function OrderDetailSheet({
                 <dd className="tabular-nums text-ink-900">{formatPrice(order.fees)}</dd>
               </div>
             )}
+            {/* Etapa 25: o código vem do snapshot no pedido — apagar o cupom
+                depois não apaga a explicação do desconto. */}
             {order.discount > 0 && (
               <div className="flex items-baseline justify-between">
-                <dt className="text-ink-600">Desconto</dt>
+                <dt className="text-ink-600">
+                  Desconto{order.coupon_code ? ` (${order.coupon_code})` : ""}
+                </dt>
                 <dd className="tabular-nums text-brand-700">- {formatPrice(order.discount)}</dd>
               </div>
             )}

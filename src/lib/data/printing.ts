@@ -173,6 +173,7 @@ export async function getPrintOrder(orderId: string): Promise<PrintOrderDocument
       subtotal: toNumber(order.subtotal),
       fees: toNumber(order.fees),
       discount: toNumber(order.discount),
+      coupon_code: (order.coupon_code as string | null) ?? null,
       total: toNumber(order.total),
       notes: (order.notes as string | null) ?? null,
       created_at: String(order.created_at ?? ""),

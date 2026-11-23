@@ -1,11 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Loader2, Minus, Plus, ReceiptText, Star, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  Loader2,
+  Minus,
+  Plus,
+  ReceiptText,
+  Star,
+  TicketPercent,
+  Trash2,
+} from "lucide-react";
 import { Sheet } from "@/components/ui/sheet";
 import { primaryButtonBase, primaryButtonStyle } from "@/components/public/themed";
 import { useCart } from "@/components/public/cart-provider";
 import { createOrder } from "@/actions/orders";
+import { applyCoupon } from "@/actions/coupons";
 import { CART_MAX_QUANTITY, ORDER_NOTES_MAX, lineTotal, toOrderItems } from "@/lib/cart";
 import {
   CONSENT_TEXT,
@@ -18,6 +30,15 @@ import {
   pointsForAmount,
   type LoyaltySettings,
 } from "@/lib/loyalty";
+import {
+  COUPON_CODE_MAX,
+  couponPreviewAmount,
+  couponReasonMessage,
+  describeCoupon,
+  formatMoney,
+  maskCouponCodeInput,
+  type CouponValidation,
+} from "@/lib/coupons";
 import { DEFAULT_THEME, themeTokens } from "@/lib/theme";
 import { formatPrice } from "@/lib/validation";
 import type { RestaurantTheme, TableOrder } from "@/lib/types";
@@ -97,6 +118,26 @@ export function CartSheet({
   const [consent, setConsent] = useState(false);
   const [identifyError, setIdentifyError] = useState<string | null>(null);
 
+  /*
+   * Cupom — Etapa 25.
+   *
+   * Três estados, não um: o código digitado, o resultado da conferência no
+   * banco e o "estou conferindo". Separados porque o desconto mostrado na tela
+   * só pode existir **depois** de o banco responder — calcular na hora com o
+   * que o cliente digitou seria mostrar um desconto que pode não valer.
+   *
+   * `applied` é limpo sempre que o carrinho muda (ver o efeito abaixo): um
+   * cupom de valor mínimo pode deixar de valer quando o cliente remove um item.
+   */
+  const [couponOpen, setCouponOpen] = useState(false);
+  const [couponInput, setCouponInput] = useState("");
+  const [couponChecking, setCouponChecking] = useState(false);
+  const [applied, setApplied] = useState<CouponValidation | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
+  const couponDiscount = applied?.ok ? Math.min(applied.amount, subtotal) : 0;
+  const estimatedTotal = Math.max(0, subtotal - couponDiscount);
+
   const programEnabled = Boolean(loyalty?.enabled);
   const programText = loyalty ? describeProgram(loyalty) : null;
   const previewPoints = loyalty ? pointsForAmount(subtotal, loyalty.points_per_currency) : 0;
@@ -115,7 +156,28 @@ export function CartSheet({
     setIdentify(false);
     setConsent(false);
     setIdentifyError(null);
+    // Cupom é por pedido também: reabrir não pode mostrar um desconto de um
+    // carrinho que não existe mais.
+    setCouponOpen(false);
+    setCouponInput("");
+    setApplied(null);
+    setCouponError(null);
   }, [open]);
+
+  /*
+   * O carrinho mudou → o cupom pode ter deixado de valer.
+   *
+   * Em vez de recarimprimir um desconto que talvez não valha mais, esquecemos
+   * o resultado e pedimos para conferir de novo. Uma conferência automática a
+   * cada toque em +/− seria uma ida ao servidor por toque.
+   */
+  const couponKey = `${applied?.code ?? ""}:${subtotal}`;
+  useEffect(() => {
+    if (!applied) return;
+    // Mantém quando nada mudou (inclusive no primeiro render após aplicar).
+    if (applied.ok && Math.min(applied.amount, subtotal) === couponDiscount) return;
+    setApplied(null);
+  }, [couponKey]);
 
   const notesLeft = ORDER_NOTES_MAX - notes.length;
 
@@ -161,6 +223,8 @@ export function CartSheet({
       customerName: identifying ? customerName.slice(0, MAX_CUSTOMER_NAME) : "",
       customerPhone: identifying ? normalizePhone(customerPhone) ?? "" : "",
       consent: identifying && consent,
+      // Só o código. O valor do desconto é do banco.
+      couponCode: applied?.ok ? (applied.code ?? "") : "",
     });
 
     setSending(false);
@@ -178,8 +242,9 @@ export function CartSheet({
       status: result.order.status,
       subtotal: result.order.subtotal,
       fees: 0,
-      discount: 0,
+      discount: result.order.discount,
       total: result.order.total,
+      coupon_code: result.order.coupon_code,
       notes: notes.trim() || null,
       created_at: result.order.created_at,
       items: items.map((item) => ({
@@ -215,6 +280,51 @@ export function CartSheet({
     clear,
   ]);
 
+  const checkCoupon = useCallback(async () => {
+    if (!tableToken || couponChecking) return;
+
+    const code = maskCouponCodeInput(couponInput);
+    if (code.length < 3) {
+      setCouponError("Digite o código do cupom.");
+      return;
+    }
+
+    setCouponChecking(true);
+    setCouponError(null);
+
+    const result = await applyCoupon({
+      tableToken,
+      code,
+      subtotal,
+      // O telefone só é usado para o limite por cliente. Vai quando a pessoa já
+      // preencheu a identificação; sem ele, essa regra é pulada pelo banco.
+      customerPhone: customerPhone.trim() ? normalizePhone(customerPhone) ?? "" : "",
+    });
+
+    setCouponChecking(false);
+
+    if (result.ok === false) {
+      setCouponError(result.error);
+      setApplied(null);
+      return;
+    }
+
+    if (!result.validation.ok) {
+      setCouponError(couponReasonMessage(result.validation.reason));
+      setApplied(null);
+      return;
+    }
+
+    setApplied(result.validation);
+    setCouponInput(result.validation.code ?? code);
+  }, [tableToken, couponChecking, couponInput, subtotal, customerPhone]);
+
+  const clearCoupon = useCallback(() => {
+    setApplied(null);
+    setCouponInput("");
+    setCouponError(null);
+  }, []);
+
   const lines = useMemo(() => items, [items]);
 
   return (
@@ -236,9 +346,16 @@ export function CartSheet({
         step === "cart" ? (
           <div className="space-y-2">
             <div className="flex items-baseline justify-between px-1 text-sm">
-              <span className="text-[var(--mv-text-muted)]">Total estimado</span>
+              <span className="text-[var(--mv-text-muted)]">
+                Total estimado
+                {couponDiscount > 0 ? (
+                  <span className="ml-1 font-semibold text-[var(--mv-primary)]">
+                    com desconto
+                  </span>
+                ) : null}
+              </span>
               <span className="text-lg font-bold tabular-nums text-[var(--mv-text)]">
-                {formatPrice(subtotal)}
+                {formatPrice(estimatedTotal)}
               </span>
             </div>
             <button
@@ -375,6 +492,92 @@ export function CartSheet({
             ))}
           </ul>
 
+          {/*
+            Cupom — Etapa 25.
+
+            Fica entre a lista e o resumo porque a pessoa lê de cima para baixo:
+            viu o que pediu, agora tenta o desconto, depois confere o total. O
+            campo nasce fechado num link — quem não tem cupom não vê formulário
+            e não fica procurando um.
+          */}
+          <div className="rounded-2xl border border-[var(--mv-border)] bg-[var(--mv-surface)] px-4 py-3">
+            {!couponOpen && !applied ? (
+              <button
+                type="button"
+                onClick={() => setCouponOpen(true)}
+                className="flex min-h-11 w-full items-center justify-between gap-3 text-left"
+              >
+                <span className="flex items-center gap-2 text-sm font-semibold text-[var(--mv-text)]">
+                  <TicketPercent className="size-4 text-[var(--mv-primary)]" aria-hidden="true" />
+                  Tenho um cupom
+                </span>
+                <ChevronDown className="size-4 text-[var(--mv-text-muted)]" aria-hidden="true" />
+              </button>
+            ) : applied?.ok ? (
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-[var(--mv-primary)]">
+                    <Check className="size-4 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{applied.code}</span>
+                  </p>
+                  <p className="mt-0.5 text-xs text-[var(--mv-text-muted)]">
+                    {formatMoney(couponDiscount)} de desconto
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearCoupon}
+                  className="min-h-9 shrink-0 text-xs font-semibold text-[var(--mv-text-muted)] underline"
+                >
+                  Remover
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="block">
+                  <span className="text-xs font-medium text-[var(--mv-text-muted)]">
+                    Código do cupom
+                  </span>
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      type="text"
+                      value={couponInput}
+                      onChange={(event) => {
+                        setCouponInput(maskCouponCodeInput(event.target.value));
+                        setCouponError(null);
+                      }}
+                      maxLength={COUPON_CODE_MAX}
+                      autoComplete="off"
+                      autoCapitalize="characters"
+                      placeholder="BEMVINDO10"
+                      className="min-h-11 min-w-0 flex-1 rounded-xl border border-[var(--mv-border)] bg-[var(--mv-bg)] px-3 text-sm uppercase tracking-wide text-[var(--mv-text)] placeholder:normal-case placeholder:tracking-normal placeholder:text-[var(--mv-text-muted)] focus:border-[var(--mv-primary)] focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={checkCoupon}
+                      disabled={couponChecking || couponInput.length < 3}
+                      className="min-h-11 shrink-0 rounded-xl bg-[var(--mv-primary)] px-4 text-sm font-bold text-white disabled:opacity-50 active:scale-[0.98]"
+                    >
+                      {couponChecking ? "…" : "Aplicar"}
+                    </button>
+                  </div>
+                </label>
+
+                {couponError && (
+                  <p className="text-xs font-medium text-red-600" role="alert">
+                    {couponError}
+                  </p>
+                )}
+
+                {!couponError && (
+                  <p className="text-[11px] leading-snug text-[var(--mv-text-muted)]">
+                    O desconto é conferido na hora e de novo no envio.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Resumo de valores. "Taxas" já aparece zerada: o espaço existe, a
               regra de taxa (garçom/entrega) é de outra etapa. */}
           <dl className="space-y-1.5 rounded-2xl bg-[var(--mv-surface-muted)] px-4 py-3 text-sm">
@@ -382,6 +585,16 @@ export function CartSheet({
               <dt className="text-[var(--mv-text-muted)]">Subtotal</dt>
               <dd className="font-medium tabular-nums text-[var(--mv-text)]">{formatPrice(subtotal)}</dd>
             </div>
+            {couponDiscount > 0 && (
+              <div className="flex items-baseline justify-between">
+                <dt className="text-[var(--mv-text-muted)]">
+                  Desconto{applied?.code ? ` (${applied.code})` : ""}
+                </dt>
+                <dd className="font-medium tabular-nums text-[var(--mv-primary)]">
+                  − {formatMoney(couponDiscount)}
+                </dd>
+              </div>
+            )}
             <div className="flex items-baseline justify-between">
               <dt className="text-[var(--mv-text-muted)]">Taxas</dt>
               <dd className="tabular-nums text-[var(--mv-text-muted)]">{formatPrice(0)}</dd>
@@ -389,9 +602,14 @@ export function CartSheet({
             <div className="flex items-baseline justify-between border-t border-[var(--mv-border)] pt-1.5">
               <dt className="font-semibold text-[var(--mv-text)]">Total</dt>
               <dd className="text-base font-bold tabular-nums text-[var(--mv-text)]">
-                {formatPrice(subtotal)}
+                {formatPrice(estimatedTotal)}
               </dd>
             </div>
+            {couponDiscount > 0 && (
+              <p className="pt-0.5 text-[11px] leading-snug text-[var(--mv-text-muted)]">
+                Total estimado. O valor final é o que o restaurante confirma no envio.
+              </p>
+            )}
           </dl>
         </div>
       ) : (
