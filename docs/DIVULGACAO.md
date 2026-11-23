@@ -195,11 +195,21 @@ devolve `42501 share_forbidden`, espaços são colapsados na gravação.
 ## 9. `sharp` como dependência direta
 
 Até a Etapa 22 o `sharp` existia apenas como dependência transitiva do `next`.
-Em produção, `/r/{slug}/opengraph-image` respondia **500** com o mesmo código que
-rodava local: o rastreamento de arquivos da Vercel não embarcou o binário nativo
-nas funções que o importam dinamicamente. Declarar `sharp` em `dependencies`
-resolve — o build passa a copiar o pacote para a função. O harness
-`share-security` guarda essa declaração para a regressão não voltar.
+
+**O que foi medido:** em produção, `/r/{slug}/opengraph-image` respondia **500**
+com exatamente o mesmo código que rodava local. Depois de declarar `sharp` como
+dependência direta e reimplantar, a mesma rota passou a responder **200** com
+`image/png`, e continuou respondendo 200 na verificação da Etapa 23.
+
+**O que não foi medido:** o *mecanismo*. A explicação mais provável é que o
+empacotamento da Vercel não incluiu o binário nativo nas funções que importam
+`sharp` dinamicamente, mas não coletamos os logs daquela função para confirmar.
+A correlação é sólida (500 → declaração → 200, estável); a causa interna é
+hipótese. Se a rota voltar a falhar, comece lendo os logs da função
+(`/r/[slug]/opengraph-image`) em vez de assumir esta seção.
+
+O harness `share-security` guarda a declaração em `dependencies` para a
+regressão não voltar.
 
 ---
 
