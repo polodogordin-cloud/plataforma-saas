@@ -12,6 +12,7 @@ import {
   listPublishedSlugs,
 } from "@/lib/data/public-menu";
 import { jsonForScript } from "@/lib/safe-html";
+import { getPublicLoyaltySettings } from "@/lib/data/loyalty";
 import { getPublicRestaurantTheme } from "@/lib/data/theme";
 import { getPublicWhatsappConfig } from "@/lib/data/whatsapp";
 import { WhatsappButton } from "@/components/public/whatsapp-button";
@@ -218,7 +219,7 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
     notFound();
   }
 
-  const [menu, timeZone, theme, whatsapp] = await Promise.all([
+  const [menu, timeZone, theme, whatsapp, loyalty] = await Promise.all([
     getPublicMenu(restaurant.id),
     getRestaurantTimezone(restaurant.id),
     // Tema da casa (Etapa 9). Falha aqui não derruba o cardápio: a leitura cai
@@ -227,6 +228,11 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
     // WhatsApp (Etapa 13). A RPC já devolve `null` quando o canal está
     // desligado, sem número ou fora do plano — aqui só se renderiza o que veio.
     getPublicWhatsappConfig(restaurant.slug),
+    // Fidelidade (Etapa 24). `null` = programa desligado: o cardápio fica
+    // exatamente como era antes desta etapa. Fica por último para a ordem do
+    // destructuring casar com a ordem das promessas — trocar as duas é o tipo
+    // de erro que o `tsc` pega, mas só se os tipos forem diferentes.
+    getPublicLoyaltySettings(restaurant.id),
   ]);
 
   const hours = readOpeningHours(restaurant.settings);
@@ -287,7 +293,7 @@ export default async function PublicMenuPage({ params }: { params: Promise<Param
         theme={theme}
       />
 
-      <PublicMenuView menu={menu} theme={theme} />
+      <PublicMenuView menu={menu} theme={theme} loyalty={loyalty} />
 
       {/* Rodapé: identidade + horários, sem virar tela de configurações */}
       <footer className="border-t border-[var(--mv-border)] bg-[var(--mv-surface)] pb-safe">

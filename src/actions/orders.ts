@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { orderInputSchema } from "@/lib/validation";
+import { cleanName, isValidPhone, normalizePhone } from "@/lib/loyalty";
 import type { CreatedOrder, TableOrder } from "@/lib/types";
 
 /**
@@ -36,6 +37,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   notes_too_long: "A observação ficou longa demais.",
   invalid_items: "Não foi possível ler o carrinho. Recarregue a página.",
   invalid_item: "Não foi possível ler o carrinho. Recarregue a página.",
+  // Etapa 24 — identificação opcional. As mensagens dizem o que fazer, não o
+  // que o banco recusou: "informe um WhatsApp com DDD" resolve, "invalid_phone"
+  // não.
+  invalid_phone: "Confira o WhatsApp: informe DDD e número.",
+  customer_name_too_long: "O nome ficou longo demais.",
+  consent_required:
+    "Para registrar seus pontos, marque a autorização de uso do seu nome e WhatsApp.",
 };
 
 function translate(message: string | undefined, code: string | undefined): string {
@@ -66,12 +74,42 @@ export async function createOrder(input: unknown): Promise<CreateOrderResult> {
 
   const { tableToken, items, notes } = parsed.data;
 
+  /*
+   * Identificação — Etapa 24.
+   *
+   * Só é enviada quando a pessoa preencheu algo E marcou o aceite. Nome de
+   * sobra sem consentimento não vai para o banco: lá o pedido inteiro seria
+   * recusado (`consent_required`), e transformar isso em "seu pedido falhou"
+   * por causa de um campo opcional seria hostil. Aqui a identificação é
+   * descartada e o pedido segue anônimo — que é o comportamento da Etapa 6.
+   *
+   * Quando há identificação, o telefone é validado no app (mensagem imediata) e
+   * de novo no banco (PostgREST é porta aberta), com a MESMA regra.
+   */
+  const wantsIdentification =
+    Boolean(parsed.data.consent) &&
+    Boolean(parsed.data.customerName.trim() || parsed.data.customerPhone.trim());
+
+  if (wantsIdentification && parsed.data.customerPhone.trim() && !isValidPhone(parsed.data.customerPhone)) {
+    return {
+      ok: false,
+      error: "Confira o WhatsApp: informe DDD e número.",
+      fieldErrors: { customerPhone: ["Informe DDD e número."] },
+    };
+  }
+
+  const customerName = wantsIdentification ? cleanName(parsed.data.customerName) : null;
+  const customerPhone = wantsIdentification ? normalizePhone(parsed.data.customerPhone) : null;
+
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("create_order", {
     p_token: tableToken,
-    // Só produto e quantidade atravessam a fronteira.
+    // Só produto e quantidade atravessam a fronteira, como na Etapa 6.
     p_items: items.map((item) => ({ product_id: item.product_id, quantity: item.quantity })),
     p_notes: notes || null,
+    p_customer_name: customerName,
+    p_customer_phone: customerPhone,
+    p_consent: wantsIdentification,
   });
 
   if (error) {

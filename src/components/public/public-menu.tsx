@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Search, X, SearchX } from "lucide-react";
+import { Search, Star, X, SearchX } from "lucide-react";
 import { ProductRow } from "@/components/public/product-row";
 import { FeaturedStrip } from "@/components/public/public-header";
+import type { LoyaltySettings } from "@/lib/loyalty";
 import { CartProvider, useCart } from "@/components/public/cart-provider";
 import { TableActionsBar } from "@/components/public/table-actions-bar";
 import {
@@ -49,6 +50,11 @@ const ProductDetail = dynamic(
   { ssr: false },
 );
 
+const MyPointsSheet = dynamic(
+  () => import("@/components/public/my-points-sheet").then((m) => m.MyPointsSheet),
+  { ssr: false },
+);
+
 const CartSheet = dynamic(
   () => import("@/components/public/cart-sheet").then((m) => m.CartSheet),
   { ssr: false },
@@ -75,6 +81,7 @@ export function PublicMenuView({
   tableName,
   tableToken,
   theme = DEFAULT_THEME,
+  loyalty = null,
 }: {
   menu: PublicMenu;
   /** Presente quando o acesso veio por QR Code/NFC: só aí é possível pedir. */
@@ -87,10 +94,15 @@ export function PublicMenuView({
    * preview do painel e para nunca renderizar sem cor.
    */
   theme?: RestaurantTheme;
+  /**
+   * Programa de fidelidade (Etapa 24). `null`/desligado = nada muda na tela:
+   * quem não usa pontos não deve nem ver que o recurso existe.
+   */
+  loyalty?: LoyaltySettings | null;
 }) {
   return (
     <CartProvider tableToken={tableToken ?? null} tableName={tableName ?? null}>
-      <MenuBody menu={menu} theme={theme} />
+      <MenuBody menu={menu} theme={theme} loyalty={loyalty} />
     </CartProvider>
   );
 }
@@ -112,8 +124,16 @@ function forgetLastOrder(tableToken: string | null) {
  * confirmação (painel) e sucesso (tela cheia depois do envio). Na volta do
  * sucesso, o carrinho já foi limpo e o cliente continua de onde parou.
  */
-function MenuBody({ menu, theme }: { menu: PublicMenu; theme: RestaurantTheme }) {
-  const { addItem, count, canOrder, tableToken, quantityOf } = useCart();
+function MenuBody({
+  menu,
+  theme,
+  loyalty = null,
+}: {
+  menu: PublicMenu;
+  theme: RestaurantTheme;
+  loyalty?: LoyaltySettings | null;
+}) {
+  const { addItem, count, canOrder, tableName, tableToken, quantityOf } = useCart();
 
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(menu.sections[0]?.id ?? null);
@@ -124,6 +144,9 @@ function MenuBody({ menu, theme }: { menu: PublicMenu; theme: RestaurantTheme })
   /** Solicitações da mesa (Etapa 8): só existem quando há token de mesa. */
   const [requestState, setRequestState] = useState<TableRequestState | null>(null);
   const [requestSheet, setRequestSheet] = useState<TableRequestType | null>(null);
+
+  /** Consulta de saldo (Etapa 24): só existe quando há mesa e programa ligado. */
+  const [pointsOpen, setPointsOpen] = useState(false);
 
   const sectionRefs = useRef(new Map<string, HTMLElement>());
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -438,6 +461,28 @@ function MenuBody({ menu, theme }: { menu: PublicMenu; theme: RestaurantTheme })
         </div>
       )}
 
+      {/*
+        Consulta de saldo — Etapa 24.
+
+        Fica no fim do cardápio, depois de todas as seções, e só existe com mesa
+        (o token é a credencial) e programa ligado. No topo, competiria com a
+        busca e com o primeiro produto; o cliente que quer pontos já pediu pelo
+        menos uma vez, então para ele é natural encontrar isso ao rolar até o
+        fim — e quem não quer nunca esbarra.
+      */}
+      {canOrder && tableToken && loyalty?.enabled && (
+        <div className="mx-auto w-full max-w-lg px-4 pb-2">
+          <button
+            type="button"
+            onClick={() => setPointsOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--mv-border)] bg-[var(--mv-surface)] py-3 text-sm font-semibold text-[var(--mv-text)] active:scale-[0.99]"
+          >
+            <Star className="size-4 text-[var(--mv-primary)]" aria-hidden="true" />
+            Consultar meus pontos
+          </button>
+        </div>
+      )}
+
       <ProductDetail
         product={selected}
         open={Boolean(selected)}
@@ -484,9 +529,21 @@ function MenuBody({ menu, theme }: { menu: PublicMenu; theme: RestaurantTheme })
         />
       )}
 
+      {tableToken && loyalty?.enabled && (
+        <MyPointsSheet
+          open={pointsOpen}
+          onClose={() => setPointsOpen(false)}
+          tableToken={tableToken}
+          tableName={tableName}
+          programNote={loyalty.program_note}
+          redeemValue={loyalty.redeem_value}
+        />
+      )}
+
       <CartSheet
         open={cartOpen}
         theme={theme}
+        loyalty={loyalty}
         onClose={() => setCartOpen(false)}
         onSent={(order) => {
           setCartOpen(false);
