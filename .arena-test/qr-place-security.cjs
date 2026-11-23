@@ -172,9 +172,12 @@ check(
   /Content-Disposition": `attachment/.test(route),
 );
 check("rota: cache privado", /Cache-Control": "private/.test(route));
+// 300 DPI = 11,8 px/mm. A rota usa essa taxa explicitamente e entrega ao `sharp`
+// um SVG já em pixels — `density` sobre mm dava 4× de resolução (ver o comentário
+// na rota). O teste guarda a **taxa**, não o nome da constante.
 check(
-  "rota: PNG rasterizado a 300 DPI",
-  /DPI = 300/.test(route) && /density: DPI/.test(route),
+  "rota: PNG rasterizado a 300 DPI (11,8 px/mm)",
+  /PX_PER_MM = 300 \/ 25\.4/.test(route) && /toPixelSvg\(svg\)/.test(route),
 );
 check(
   "rota: recusa formato desconhecido",

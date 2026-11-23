@@ -13,6 +13,7 @@ import { WhatsappButton } from "@/components/public/whatsapp-button";
 import { resolveTableToken } from "@/lib/data/tables";
 import { getRestaurantTimezone } from "@/lib/data/timezone";
 import type { PublicRestaurant } from "@/lib/types";
+import { metadataBaseUrl } from "@/lib/site";
 
 type Params = { slug: string; token: string };
 
@@ -29,10 +30,59 @@ type Params = { slug: string; token: string };
  */
 export const revalidate = 60;
 
-export const metadata: Metadata = {
-  // Mesa é contexto de salão, não conteúdo de busca.
-  robots: { index: false, follow: false },
-};
+/**
+ * Metadados da mesa.
+ *
+ * `robots: noindex` continua — mesa é contexto de salão, e um cardápio de mesa
+ * não deve competir com o do restaurante na busca.
+ *
+ * Mas **Open Graph** existe (Etapa 23): o link da mesa é compartilhado de verdade
+ * (o garçom manda no direct, o cliente repassa para o grupo). Sem `og:*`, esse
+ * link aparecia no WhatsApp como uma URL crua — e o dono ficava com a impressão
+ * de que o compartilhamento não funciona.
+ *
+ * A imagem vem da rota `opengraph-image` do segmento pai (`/r/[slug]`), que o
+ * Next herda automaticamente — por isso não a declaramos aqui.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<Params>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const restaurant = await getPublicRestaurant(slug);
+
+  if (!restaurant) {
+    return {
+      title: "Cardápio não encontrado",
+      robots: { index: false, follow: false },
+    };
+  }
+
+  const description =
+    restaurant.description?.trim() ||
+    `Veja o cardápio de ${restaurant.name} e escolha o que pedir.`;
+
+  return {
+    metadataBase: metadataBaseUrl(),
+    title: `${restaurant.name} · Cardápio`,
+    description,
+    robots: { index: false, follow: false },
+    openGraph: {
+      type: "website",
+      siteName: "Menuvo",
+      locale: "pt_BR",
+      title: `${restaurant.name} · Cardápio`,
+      description,
+      url: `/r/${restaurant.slug}/table`,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${restaurant.name} · Cardápio`,
+      description,
+    },
+  };
+}
 
 export default async function TableMenuPage({ params }: { params: Promise<Params> }) {
   const { slug, token } = await params;
