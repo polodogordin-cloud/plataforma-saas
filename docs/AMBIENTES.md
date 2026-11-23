@@ -419,8 +419,9 @@ Requer `npm ci` e, para os harnesses de UI/SSR, `npm install esbuild jsdom --no-
 | `security-lib` / `diagnostics-lib` | 40 / 58 |
 | `error-states` / `tenant-audit` | 65 / 29 |
 | `onboarding-lib` / `onboarding-ssr` | 112 / 87 |
+| `qr-place-lib` / `qr-place-security` / `qr-place-ssr` | 117 / 71 / 63 |
 
-Total: **2.416 asserções** contadas em 43 arquivos (os 44 arquivos da suíte
+Total: **2.667 asserções** contadas em 46 arquivos (os 47 arquivos da suíte
 menos `pwa-nav`), **todas passando** na execução de 2026-11-22. A única exceção
 continua anterior à Etapa 19: `pwa-nav` não chega a executar (falha de bundle) —
 ver a nota abaixo. `kitchen-ui` passou 59/59 nesta execução, mas a asserção de
@@ -554,3 +555,32 @@ comando — sem PIX e sem passar pela tela nova.
 recusa existe, que a troca de intervalo continua livre, que o anti-downgrade e a
 autorização não foram perdidos, que o master mantém o ajuste com `by_admin` no
 log, e que o texto do erro chega em português à tela.
+
+---
+
+## Migration 0023 — plaquinhas de QR (Etapa 22) — verificação no banco
+
+Aplicada em `fjrvjnhnvjkpowxzxiez` e registrada como
+`20261122160000 stage22_qr_places`.
+
+| # | Teste | Esperado → obtido |
+| --- | --- | --- |
+| 1 | `save_qr_place_style` em tenant alheio (dono do Pancadão, restaurante Famintos) | ✅ `qr_style_forbidden` (42501) |
+| 2 | `save_qr_place_style` com `[1,2]` (não-objeto) | ✅ `invalid_qr_style` (22023) |
+| 3 | `save_qr_place_style` com jsonb > 4 KB | ✅ `qr_style_too_large` (22023) |
+| 4 | `qr_place_overview` de restaurante alheio | ✅ `null` |
+| 5 | `qr_place_overview` da própria casa | ✅ objeto com `restaurant` + `tables` |
+| 6 | `anon` executa `save_qr_place_style` | ✅ `false` (revogado) |
+| 7 | `anon` executa `qr_place_overview` | ✅ `false` (revogado) |
+
+> Rodadas com `set local role authenticated` + `request.jwt.claims` do dono do
+> Pancadão, em `begin … rollback`. Sem isso a consulta roda como `postgres` e
+> ignora privilégios — daria falso positivo.
+
+**Coluna nova:** `restaurants.qr_place_style jsonb`, com `check`
+(`restaurants_qr_place_style_shape`) exigindo objeto com a chave `format`.
+Guardamos **só a arte**; a URL do QR é derivada de `slug` + `public_token` na
+hora de desenhar (ver `docs/QR-CODES.md` §6).
+
+**Harnesses:** `qr-place-lib.cjs` (117), `qr-place-security.cjs` (71),
+`qr-place-ssr.cjs` (63).

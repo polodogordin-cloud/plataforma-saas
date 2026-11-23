@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { ShieldAlert } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, QrCode, ShieldAlert } from "lucide-react";
 import { AppHeader } from "@/components/app/app-header";
 import { TablesManager } from "@/components/tables/tables-manager";
 import { getActiveRestaurant } from "@/lib/data/restaurants";
@@ -40,6 +41,27 @@ export default async function TablesPage() {
       <AppHeader title="Mesas" subtitle={restaurant.name} />
 
       <main className="app-shell px-4 pb-40 pt-4">
+        {/*
+          Entrada do gerador de plaquinhas (Etapa 22). Fica acima do aviso de
+          permissão porque baixar QR é justamente o que quem não edita mesas
+          mais precisa — o gerador abre para qualquer membro da casa.
+        */}
+        <Link
+          href="/app/mesas/qrcodes"
+          className="mb-4 flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-soft)] transition hover:bg-ink-50"
+        >
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
+            <QrCode className="size-5" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-ink-900">QR Codes e plaquinhas</span>
+            <span className="block text-xs leading-snug text-ink-500">
+              Baixe o QR de cada mesa em PNG ou SVG, personalize a placa e copie a URL para NFC.
+            </span>
+          </span>
+          <ChevronRight className="size-5 shrink-0 text-ink-400" aria-hidden="true" />
+        </Link>
+
         {!canEdit && (
           <div className="mb-4 flex items-start gap-3 rounded-xl bg-amber-50 px-4 py-3 ring-1 ring-inset ring-amber-200">
             <ShieldAlert className="mt-0.5 size-4.5 shrink-0 text-amber-600" aria-hidden="true" />
