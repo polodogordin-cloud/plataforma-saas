@@ -1,21 +1,32 @@
 import Link from "next/link";
 import { ChevronLeft, Plus } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
+import { NotificationBellSlot } from "@/components/notifications/bell-slot";
 import { cn } from "@/lib/utils";
 
-/** Cabeçalho compacto das telas internas. */
+/**
+ * Cabeçalho compacto das telas internas.
+ *
+ * `bell` (Etapa 26) é ligado por padrão: o sino vem do
+ * `NotificationBellProvider` montado no layout de `/app`, então todas as telas
+ * internas ganham o aviso sem precisar passar prop nenhuma. Fora de `/app` não
+ * há provider e o slot não desenha nada — nenhum canal de tempo real órfão.
+ * `bell={false}` desliga explicitamente onde o aviso não faz sentido.
+ */
 export function AppHeader({
   title,
   subtitle,
   backHref,
   action,
   showLogo = false,
+  bell = true,
 }: {
   title: string;
   subtitle?: string;
   backHref?: string;
   action?: { href: string; label: string; icon?: React.ReactNode };
   showLogo?: boolean;
+  bell?: boolean;
 }) {
   return (
     <header className="sticky top-0 z-30 border-b border-ink-200/70 bg-white/90 backdrop-blur-lg"
@@ -42,6 +53,8 @@ export function AppHeader({
             <p className="truncate text-xs text-ink-500">{subtitle}</p>
           )}
         </div>
+
+        {bell && <NotificationBellSlot />}
 
         {action && (
           <Link

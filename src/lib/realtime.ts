@@ -25,3 +25,18 @@ export const REALTIME_FILTER = { table: "orders", schema: "public" } as const;
  */
 export const tableRequestsRealtimeChannel = (restaurantId: string) =>
   `table-requests:${restaurantId}`;
+
+/**
+ * Canal do sino (Etapa 26).
+ *
+ * Um canal por usuário, não por restaurante: a linha de `notifications` já é de
+ * um destinatário, e filtrar por `user_id` no cliente reduz o tráfego — o
+ * evento de outra pessoa não chega nem a ser entregue.
+ *
+ * `notifications` está na publicação `supabase_realtime` com `replica identity
+ * full`, então o payload traz a linha inteira e o sino pode atualizar o contador
+ * sem consultar nada. Mesmo assim a tela relê a lista ao abrir o painel: o
+ * payload serve para "chegou algo", não como fonte de verdade.
+ */
+export const notificationsRealtimeChannel = (userId: string) =>
+  `notifications:${userId}`;

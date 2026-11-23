@@ -2,7 +2,10 @@ import { redirect } from "next/navigation";
 import { BottomNav } from "@/components/app/bottom-nav";
 import { SuspendedNotice } from "@/components/app/suspended-notice";
 import { SubscriptionNotice } from "@/components/app/subscription-notice";
+import { NotificationBellProvider } from "@/components/notifications/bell-slot";
 import { getActiveRestaurant, getSessionUser } from "@/lib/data/restaurants";
+import { getRestaurantTimezone } from "@/lib/data/timezone";
+import { getUnreadNotificationCount, runNotificationReview } from "@/lib/data/notifications";
 import { ROLE_CAPABILITIES } from "@/lib/types";
 import { getMySubscription } from "@/lib/data/billing";
 import { SUBSCRIPTION_STATE_ALLOWS_ACCESS } from "@/lib/types";
@@ -74,16 +77,46 @@ export default async function AppLayout({
   const capabilities = ROLE_CAPABILITIES[restaurant?.role ?? "staff"];
   const kitchenOnly = restaurant?.role === "kitchen";
 
+  /*
+   * Etapa 26 — a revisão do dia roda aqui, uma vez por carregamento do painel.
+   *
+   * É o substituto do cron que este projeto não tem: assinatura vencendo e
+   * cupom expirando precisam de alguém para olhar o calendário, e o momento em
+   * que o dono abre o painel é exatamente quando ele pode agir. O banco impede
+   * duplicidade por dia, então abrir dez telas não enche o sino.
+   *
+   * `Promise.all` com o fuso e o contador: três consultas independentes não
+   * precisam ser sequenciais. A revisão engole os próprios erros (ver `runNotificationReview`),
+   * porque aviso que falha não pode derrubar o painel.
+   */
+  const [timeZone, , unread] = await Promise.all([
+    restaurant ? getRestaurantTimezone(restaurant.id) : Promise.resolve(null),
+    restaurant ? runNotificationReview(restaurant.id) : Promise.resolve(),
+    /*
+     * O contador vem do servidor na primeira pintura. Sem isso o sino nasce
+     * apagado e só acende depois de abrir o painel — o oposto do que ele
+     * serve: ninguém abre um sino que parece vazio.
+     */
+    getUnreadNotificationCount(),
+  ]);
+
   return (
-    <div className="min-h-dvh bg-ink-50">
-      {/* pb: espaço para a navegação fixa + área segura do iOS */}
-      <div className="pb-[calc(4.25rem+env(safe-area-inset-bottom))]">{children}</div>
-      <BottomNav
-        kitchenOnly={kitchenOnly}
-        showMenu={capabilities.manageMenu}
-        showOrders={capabilities.manageOrders}
-        showAnalytics={capabilities.viewAnalytics}
-      />
-    </div>
+    <NotificationBellProvider
+      userId={user.id}
+      restaurantName={restaurant?.name ?? null}
+      timeZone={timeZone}
+      initialUnread={unread}
+    >
+      <div className="min-h-dvh bg-ink-50">
+        {/* pb: espaço para a navegação fixa + área segura do iOS */}
+        <div className="pb-[calc(4.25rem+env(safe-area-inset-bottom))]">{children}</div>
+        <BottomNav
+          kitchenOnly={kitchenOnly}
+          showMenu={capabilities.manageMenu}
+          showOrders={capabilities.manageOrders}
+          showAnalytics={capabilities.viewAnalytics}
+        />
+      </div>
+    </NotificationBellProvider>
   );
 }

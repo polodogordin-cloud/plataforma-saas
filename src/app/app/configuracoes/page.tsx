@@ -12,6 +12,7 @@ import {
   Palette,
   Printer,
   ShieldCheck,
+  BellRing,
   Store,
   TicketPercent,
   UserRound,
@@ -87,6 +88,17 @@ const groups: { title: string; items: Item[] }[] = [
         label: "Clientes e fidelidade",
         description: "Quem voltou, quanto gastou e pontos",
         icon: Users,
+      },
+    ],
+  },
+  {
+    title: "Avisos",
+    items: [
+      {
+        href: "/app/notificacoes",
+        label: "Notificações",
+        description: "O que aparece no sino e o que pode ficar de fora",
+        icon: BellRing,
       },
     ],
   },

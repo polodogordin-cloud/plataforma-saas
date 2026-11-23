@@ -60,6 +60,8 @@ export function OrdersPanel({
   initialPending,
   initialTab,
   autoPrint = false,
+  focusOrderId = null,
+  focusRequests = false,
 }: {
   restaurantId: string;
   timeZone: string;
@@ -78,6 +80,14 @@ export function OrdersPanel({
    * impresso por causa disso.
    */
   autoPrint?: boolean;
+  /**
+   * Etapa 26: id de pedido vindo de uma notificação (`?pedido=...`). Abre o
+   * detalhe assim que a lista carrega, porque quem tocou no sino já disse o que
+   * quer ver — obrigar a procurar o card seria desfazer o atalho.
+   */
+  focusOrderId?: string | null;
+  /** `?aba=salao`: veio de uma chamada de garçom ou pedido de conta. */
+  focusRequests?: boolean;
 }) {
   const { active, done, loading, loadingMore, hasMoreDone, refresh, loadMoreDone, historyFor } =
     usePanelOrders();
@@ -227,6 +237,38 @@ export function OrdersPanel({
     await refresh();
   };
 
+  /* ------------------------------------------------- deep link (Etapa 26) */
+  /*
+   * Abre o pedido da notificação. Espera a lista carregar porque o detalhe é
+   * montado a partir do `PanelOrder` (com itens e mesa), não do id solto — o
+   * evento do sino traz só o id, e buscar o pedido por id sem a lista daria um
+   * segundo caminho de leitura para o mesmo dado.
+   *
+   * Se o pedido já saiu da lista ativa (entregue/cancelado), nada acontece: a
+   * pessoa cai na tela de pedidos normal, que é onde ela encontraria o
+   * histórico. Um erro aqui seria pior que o silêncio.
+   */
+  const focusedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusOrderId || loading || focusedRef.current === focusOrderId) return;
+
+    const found = [...active, ...done].find((order) => order.id === focusOrderId);
+    if (!found) return;
+
+    focusedRef.current = focusOrderId;
+    setDetail(found);
+  }, [focusOrderId, loading, active, done]);
+
+  const requestsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!focusRequests) return;
+    // Pequeno atraso: a seção monta depois do primeiro paint da lista.
+    const timer = window.setTimeout(() => {
+      requestsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [focusRequests]);
+
   /* --------------------------------------------------------- filtros */
   const tabDef = PANEL_TABS.find((item) => item.id === tab) ?? PANEL_TABS[0]!;
 
@@ -353,7 +395,9 @@ export function OrdersPanel({
         está esperando AGORA, e a lista de pedidos já tem sua própria
         prioridade (novos primeiro). A seção some sozinha quando a fila zera.
       */}
-      <RequestsPanelHost restaurantId={restaurantId} />
+      <div ref={requestsRef} id="salao" className="scroll-mt-16">
+        <RequestsPanelHost restaurantId={restaurantId} />
+      </div>
 
       {/* ---------------------------------------------------- som */}
       <div className="mb-3 flex items-center gap-2">
