@@ -278,6 +278,28 @@ export const orderInputSchema = z.object({
     .max(ORDER_NOTES_MAX, `A observação pode ter no máximo ${ORDER_NOTES_MAX} caracteres.`)
     .optional()
     .default(""),
+  /*
+   * Identificação do cliente — Etapa 24, **opcional por definição**.
+   *
+   * Nenhum dos três campos é obrigatório: quem só quer pedir continua pedindo
+   * anônimo, exatamente como na Etapa 6. O que a validação garante é que, se a
+   * pessoa **decidiu** se identificar, o dado vem completo e com consentimento
+   * — nome ou telefone sem aceite derrubam o pedido no banco
+   * (`consent_required`), e o app recusa antes para dar a mensagem certa.
+   */
+  customerName: z
+    .string()
+    .trim()
+    .max(120, "O nome pode ter no máximo 120 caracteres.")
+    .optional()
+    .default(""),
+  customerPhone: z
+    .string()
+    .trim()
+    .max(40, "Telefone longo demais.")
+    .optional()
+    .default(""),
+  consent: z.boolean().optional().default(false),
 });
 
 export type OrderInput = z.infer<typeof orderInputSchema>;

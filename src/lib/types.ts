@@ -1,5 +1,7 @@
 /** Tipos de domínio da Etapa 1. Espelham o schema em supabase/migrations. */
 
+import type { LoyaltyEntryKind, LoyaltyEntrySource } from "@/lib/loyalty";
+
 export type MemberStatus = "active" | "invited" | "suspended";
 
 export type UserProfile = {
@@ -1853,4 +1855,68 @@ export type AdminPaymentSummary = {
   confirmed: number;
   rejected: number;
   confirmed_amount_month: number;
+};
+
+/* ==========================================================================
+   Etapa 24 · Fidelidade e clientes
+   ========================================================================== */
+
+/**
+ * Cliente de uma casa, como o painel o vê.
+ *
+ * `points_balance` vem calculado por `list_restaurant_customers` (é SUM do
+ * extrato). Não é coluna: o saldo nunca é gravado, justamente para não divergir
+ * do histórico.
+ */
+export type Customer = {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  total_orders: number;
+  total_spent: number;
+  last_order_at: string | null;
+  created_at: string;
+  points_balance: number;
+  erased_at: string | null;
+};
+
+/** Ficha do cliente — resposta de `customer_overview`. */
+export type CustomerDetail = {
+  customer: Customer & {
+    birth_date: string | null;
+    consent_at: string | null;
+    consent_version: string | null;
+    consent_revoked_at: string | null;
+    tags: string[];
+  };
+  balance: number;
+  orders_count: number;
+  first_order_at: string | null;
+  last_order_at: string | null;
+  /** `null` quando há menos de dois pedidos — ver `formatFrequency`. */
+  orders_per_month: number | null;
+  entries: CustomerPointEntry[];
+};
+
+/** Um lançamento do extrato de pontos. */
+export type CustomerPointEntry = {
+  id: string;
+  kind: LoyaltyEntryKind;
+  source: LoyaltyEntrySource;
+  delta: number;
+  reference: string | null;
+  note: string | null;
+  created_at: string;
+  order_id: string | null;
+};
+
+/** Saldo público do cliente (resposta de `customer_points`). */
+export type CustomerPoints = {
+  name: string | null;
+  balance: number;
+  enabled: boolean;
+  program_note: string | null;
+  points_per_currency: number;
+  redeem_value: number;
 };

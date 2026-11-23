@@ -16,6 +16,7 @@ import {
   Plus,
   Store,
   UtensilsCrossed,
+  Users,
   ChartNoAxesColumn,
 } from "lucide-react";
 import { AppHeader } from "@/components/app/app-header";
@@ -255,6 +256,31 @@ export default async function DashboardPage({
             <span className="block text-sm font-semibold text-ink-900">Divulgar meu cardápio</span>
             <span className="block text-xs leading-snug text-ink-500">
               Link, QR Code geral, mensagem para WhatsApp e redes sociais — direto do celular.
+            </span>
+          </span>
+          <ArrowRight className="size-5 shrink-0 text-ink-400" aria-hidden="true" />
+        </Link>
+
+        {/*
+          Etapa 24: clientes e fidelidade.
+
+          Entra aqui, e não na barra inferior, porque a barra já está cheia em
+          seis abas (ver o comentário de `LABEL_SIZE` na navegação) e porque
+          "meus clientes" é uma tela de consulta — o dono abre quando quer
+          olhar, não a cada pedido. O atalho aparece para qualquer membro: ler
+          a lista não é ato administrativo, e quem recusa escrita é o banco.
+        */}
+        <Link
+          href="/app/clientes"
+          className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-soft)] transition hover:bg-ink-50 active:scale-[0.995]"
+        >
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
+            <Users className="size-5" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-ink-900">Clientes e fidelidade</span>
+            <span className="block text-xs leading-snug text-ink-500">
+              Quem voltou, quanto gastou e quantos pontos tem — pontos a cada pedido entregue.
             </span>
           </span>
           <ArrowRight className="size-5 shrink-0 text-ink-400" aria-hidden="true" />
