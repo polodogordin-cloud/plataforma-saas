@@ -168,6 +168,10 @@ check(
 );
 check("og: cache público", /Cache-Control": `public/.test(ogRoute));
 check("og: logo com limite de tamanho", /300 \* 1024/.test(ogRoute));
+check(
+  "og: usa a chamada editada na arte",
+  /readShareHeadline|share_headline/.test(ogRoute) && !/function headlineFromSettings\(_settings/.test(ogRoute),
+);
 check("og: valida tipo da logo", /image\/png/.test(ogRoute) && /image\/jpeg/.test(ogRoute));
 check("og: sem service_role", !/service_role/i.test(ogRoute));
 
@@ -242,6 +246,25 @@ const secrets = newFiles.filter((file) =>
   /createAdminClient|SUPABASE_SERVICE_ROLE_KEY|SERVICE_ROLE_KEY/i.test(read(file)),
 );
 check("sem chave de serviço nos arquivos novos", secrets.length === 0, secrets.join(", "));
+
+/*
+ * `sharp` como dependência **direta**.
+ *
+ * Era só transitiva (dentro do `next`), e o rastreamento de arquivos da Vercel
+ * não a incluiu nas funções que a importam: em produção, `/r/{slug}/opengraph-image`
+ * respondia 500 enquanto o mesmo código rodava local. O pacote precise estar no
+ * `package.json` para o build da Vercel embarcar o binário nativo.
+ */
+{
+  const pkg = JSON.parse(read("package.json"));
+  check("deps: sharp declarado no package.json", Boolean(pkg.dependencies?.sharp), pkg.dependencies?.sharp);
+  check(
+    "deps: sharp é usado só por rotas de imagem",
+    ["src/app/r/[slug]/opengraph-image.tsx", "src/app/app/mesas/[id]/qr/place/route.ts"].every(
+      (file) => /import\(\s*["']sharp["']\s*\)/.test(read(file)),
+    ),
+  );
+}
 
 check(
   "texto: nunca afirma publicar automaticamente",
